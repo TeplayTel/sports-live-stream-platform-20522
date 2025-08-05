@@ -2,11 +2,11 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Dict, Any
 from passlib.context import CryptContext
 
-from ..models.user import UserCreate, UserLogin, UserResponse, TokenData, UserUpdate
-from ..auth.jwt_auth import JWTAuth, get_current_user_id, get_current_user
-from ..database.connection import get_db
-from ..database.repositories import UserRepository
-from ..database.schemas import convert_user_db_to_response
+from models.user import UserCreate, UserLogin, UserResponse, TokenData, UserUpdate
+from auth.jwt_auth import JWTAuth, get_current_user_id, get_current_user
+from database.connection import get_db
+from database.repositories import UserRepository
+from database.schemas import convert_user_db_to_response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])

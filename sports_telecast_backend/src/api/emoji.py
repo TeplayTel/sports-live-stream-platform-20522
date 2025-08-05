@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import Optional
 
-from ..models.emoji import (
+from models.emoji import (
     EmojiListResponse, EmojiReactionRequest, EmojiReactionResponse,
     EmojiReactionSummary
 )
-from ..auth.jwt_auth import get_current_user_id, optional_auth
-from ..database.connection import db
-from ..websocket.manager import manager
+from auth.jwt_auth import get_current_user_id, optional_auth
+from database.connection import db
+from websocket.manager import manager
 
 router = APIRouter(prefix="/fan-engagement/emoji/v1", tags=["Fan Engagement - Emojis"])
 

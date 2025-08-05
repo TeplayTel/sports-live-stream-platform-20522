@@ -12,7 +12,7 @@ from .highlights import router as highlights_router
 from .websocket import router as websocket_router
 
 # Import database components
-from ..database import (
+from database import (
     init_database, 
     close_database_connections, 
     check_database_connection,

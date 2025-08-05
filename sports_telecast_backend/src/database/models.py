@@ -177,7 +177,7 @@ class HighlightDB(Base):
     video_url: Mapped[str] = mapped_column(Text, nullable=False)
     thumbnail_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     duration: Mapped[int] = mapped_column(Integer, nullable=False)
-    tags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    tags: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
     view_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     

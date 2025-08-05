@@ -35,6 +35,21 @@ from .models import (
     EmojiTypeEnum
 )
 
+from .schemas import (
+    convert_user_db_to_response,
+    convert_team_db_to_pydantic,
+    convert_event_db_to_pydantic,
+    convert_match_db_to_pydantic,
+    convert_match_event_db_to_pydantic,
+    convert_highlight_db_to_pydantic,
+    convert_emoji_db_to_pydantic,
+    convert_reaction_db_to_pydantic,
+    convert_enum_to_pydantic,
+    convert_enum_to_sqlalchemy,
+    get_enum_mapping,
+    ENUM_MAPPINGS
+)
+
 __all__ = [
     # Connection components
     "get_db",
@@ -62,5 +77,19 @@ __all__ = [
     "SportTypeEnum",
     "MatchStatusEnum", 
     "UserRoleEnum",
-    "EmojiTypeEnum"
+    "EmojiTypeEnum",
+    
+    # Schema conversion utilities
+    "convert_user_db_to_response",
+    "convert_team_db_to_pydantic",
+    "convert_event_db_to_pydantic",
+    "convert_match_db_to_pydantic",
+    "convert_match_event_db_to_pydantic",
+    "convert_highlight_db_to_pydantic",
+    "convert_emoji_db_to_pydantic",
+    "convert_reaction_db_to_pydantic",
+    "convert_enum_to_pydantic",
+    "convert_enum_to_sqlalchemy",
+    "get_enum_mapping",
+    "ENUM_MAPPINGS"
 ]

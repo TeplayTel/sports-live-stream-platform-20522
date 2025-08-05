@@ -12,17 +12,58 @@ class Base(DeclarativeBase):
     """Base class for all database models"""
     pass
 
-# Database configuration
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "sports_telecast")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+# Database configuration - Use environment variables with PostgreSQL naming convention
+POSTGRES_URL = os.getenv("POSTGRES_URL")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "sports_telecast")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 # Create async database URL
-DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+if POSTGRES_URL:
+    # Parse the POSTGRES_URL and rebuild with asyncpg driver
+    if POSTGRES_URL.startswith("postgresql://"):
+        # Extract components from URL for proper asyncpg format
+        url_parts = POSTGRES_URL.replace("postgresql://", "").split("/")
+        if len(url_parts) >= 2:
+            connection_part = url_parts[0]  # host:port or user:pass@host:port
+            db_name = url_parts[1]
+            
+            if "@" in connection_part:
+                # Has user credentials
+                creds, host_port = connection_part.split("@")
+                if ":" in creds:
+                    user, password = creds.split(":", 1)
+                else:
+                    user = creds
+                    password = POSTGRES_PASSWORD
+            else:
+                # No credentials in URL, use env vars
+                host_port = connection_part
+                user = POSTGRES_USER
+                password = POSTGRES_PASSWORD
+            
+            if ":" in host_port:
+                host, port = host_port.split(":")
+            else:
+                host = host_port
+                port = POSTGRES_PORT
+            
+            DATABASE_URL = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db_name}"
+        else:
+            # Fallback to component-based URL
+            DB_HOST = os.getenv("DB_HOST", "localhost")
+            DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{DB_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    else:
+        # URL doesn't start with postgresql://, treat as components
+        DB_HOST = os.getenv("DB_HOST", "localhost")
+        DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{DB_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+else:
+    # Build URL from components
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{DB_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
-logger.info(f"Database URL configured: postgresql+asyncpg://{DB_USER}:***@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+logger.info(f"Database URL configured: postgresql+asyncpg://{POSTGRES_USER}:***@localhost:{POSTGRES_PORT}/{POSTGRES_DB}")
 
 # Create async engine
 engine = create_async_engine(
@@ -112,7 +153,7 @@ async def check_database_connection() -> bool:
     """
     try:
         async with engine.begin() as conn:
-            await conn.execute(func.select(1))
+            await conn.execute(func.select(func.literal(1)))
         logger.info("Database connection check successful")
         return True
     except Exception as e:
@@ -143,14 +184,14 @@ async def get_database_health() -> dict:
     """
     try:
         async with engine.begin() as conn:
-            result = await conn.execute(func.select(1))
+            result = await conn.execute(func.select(func.literal(1)))
             await result.fetchone()
         
         return {
             "status": "healthy",
-            "database": DB_NAME,
-            "host": DB_HOST,
-            "port": DB_PORT,
+            "database": POSTGRES_DB,
+            "host": "localhost",
+            "port": POSTGRES_PORT,
             "connection_pool_size": engine.pool.size(),
             "checked_out_connections": engine.pool.checkedout(),
         }
@@ -158,9 +199,9 @@ async def get_database_health() -> dict:
         return {
             "status": "unhealthy",
             "error": str(e),
-            "database": DB_NAME,
-            "host": DB_HOST,
-            "port": DB_PORT,
+            "database": POSTGRES_DB,
+            "host": "localhost",
+            "port": POSTGRES_PORT,
         }
 
 # Dependency for FastAPI

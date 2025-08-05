@@ -182,6 +182,36 @@ class MatchRepository(BaseRepository):
             .limit(limit)
         )
         return result.scalars().all()
+    
+    # PUBLIC_INTERFACE
+    async def get_matches_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0, status: Optional[MatchStatus] = None) -> List[MatchDB]:
+        """Get matches for a specific event"""
+        query = select(MatchDB).options(
+            selectinload(MatchDB.home_team),
+            selectinload(MatchDB.away_team),
+            selectinload(MatchDB.event)
+        ).where(MatchDB.event_id == event_id)
+        
+        if status:
+            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
+            
+        query = query.order_by(desc(MatchDB.start_time)).offset(offset).limit(limit)
+        
+        result = await self.session.execute(query)
+        return result.scalars().all()
+    
+    # PUBLIC_INTERFACE
+    async def get_total_matches_count(self, status: Optional[MatchStatus] = None, sport: Optional[SportType] = None) -> int:
+        """Get total count of matches with optional filtering"""
+        query = select(func.count(MatchDB.match_id))
+        
+        if status:
+            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
+        if sport:
+            query = query.where(MatchDB.sport_type == SportTypeEnum(sport.value))
+        
+        result = await self.session.execute(query)
+        return result.scalar() or 0
 
 class EventRepository(BaseRepository):
     """Repository for event operations"""

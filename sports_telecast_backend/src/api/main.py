@@ -5,11 +5,11 @@ import logging
 from contextlib import asynccontextmanager
 
 # Import routers
-from .auth import router as auth_router
-from .matches import router as matches_router
-from .emoji import router as emoji_router
-from .highlights import router as highlights_router
-from .websocket import router as websocket_router
+from api.auth import router as auth_router
+from api.matches import router as matches_router
+from api.emoji import router as emoji_router
+from api.highlights import router as highlights_router
+from api.websocket import router as websocket_router
 
 # Import database components
 from database import (

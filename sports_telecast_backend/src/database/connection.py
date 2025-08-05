@@ -2,7 +2,7 @@ import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.sql import func
+from sqlalchemy.sql import text
 from contextlib import asynccontextmanager
 import logging
 from dotenv import load_dotenv
@@ -125,7 +125,7 @@ async def check_database_connection() -> bool:
     """
     try:
         async with engine.begin() as conn:
-            await conn.execute(func.select(1))
+            await conn.execute(text("SELECT 1"))
         logger.info("Database connection check successful")
         return True
     except Exception as e:
@@ -156,7 +156,7 @@ async def get_database_health() -> dict:
     """
     try:
         async with engine.begin() as conn:
-            result = await conn.execute(func.select(1))
+            result = await conn.execute(text("SELECT 1"))
             await result.fetchone()
         
         return {

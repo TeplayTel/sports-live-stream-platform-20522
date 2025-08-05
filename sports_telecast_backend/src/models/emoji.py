@@ -63,7 +63,6 @@ class EmojiListResponse(BaseModel):
 
 class EmojiReactionRequest(BaseModel):
     """Request model for emoji reaction"""
-    user_id: str = Field(..., description="User identifier", example="USR456")
     event_id: str = Field(..., description="Event identifier", example="EVT123")
     emoji_id: str = Field(..., description="Emoji identifier", example="EMJ001")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow, description="Reaction timestamp")

@@ -1,13 +1,14 @@
 """
 Comprehensive API testing script for Sports Telecast Backend
 Tests all major endpoints and functionality
+
 """
 import requests
 import time
 import sys
 from typing import Optional
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:3001"
 
 class APITester:
     def __init__(self, base_url: str = BASE_URL):
@@ -132,7 +133,6 @@ class APITester:
         try:
             headers = {"Authorization": f"Bearer {self.token}"}
             reaction_data = {
-                "user_id": "test-user-123",
                 "event_id": "MATCH001",
                 "emoji_id": "EMJ103",
                 "created_at": "2025-08-04T15:30:00Z"
@@ -271,7 +271,7 @@ def main():
     except Exception as e:
         print(f"❌ Cannot connect to server at {BASE_URL}")
         print(f"   Error: {e}")
-        print("   Make sure the server is running with: uvicorn src.api.main:app --host 0.0.0.0 --port 8000")
+        print("   Make sure the server is running with: uvicorn src.api.main:app --host 0.0.0.0 --port 3001")
         sys.exit(1)
     
     tester = APITester(BASE_URL)

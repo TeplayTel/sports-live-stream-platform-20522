@@ -8,7 +8,11 @@ from alembic import context
 
 # Import your models
 from src.database.connection import Base
-from src.database.models import UserDB  # noqa: F401 - Import needed for Alembic model discovery
+# Import all models to ensure they are registered with SQLAlchemy
+from src.database.models import (  # noqa: F401 - Import needed for Alembic model discovery
+    UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
+    EmojiAssetDB, UserEmojiReactionDB, HighlightDB
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -30,11 +34,11 @@ target_metadata = Base.metadata
 
 def get_url():
     """Get database URL from environment variables"""
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "5432")
-    DB_NAME = os.getenv("DB_NAME", "sports_telecast")
-    DB_USER = os.getenv("DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+    DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+    DB_NAME = os.getenv("POSTGRES_DB", "sports_telecast")
+    DB_USER = os.getenv("POSTGRES_USER", "postgres")
+    DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
     
     return f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 

@@ -96,12 +96,21 @@ async def init_database():
     """
     try:
         async with engine.begin() as conn:
-            # Import all models to ensure they're registered
-            from .models import UserDB  # noqa: F401 - Import needed for SQLAlchemy model registration
+            # Import all models to ensure they're registered with SQLAlchemy
+            from .models import (  # noqa: F401 - Import needed for SQLAlchemy model registration
+                UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
+                EmojiAssetDB, UserEmojiReactionDB, HighlightDB
+            )
             
             logger.info("Creating database tables...")
             await conn.run_sync(Base.metadata.create_all)
             logger.info("Database tables created successfully")
+            
+            # Log table creation confirmation
+            logger.info("All database models registered and tables initialized:")
+            logger.info("- users, teams, events, matches, match_events")
+            logger.info("- emoji_assets, user_emoji_reactions, highlights")
+            
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise

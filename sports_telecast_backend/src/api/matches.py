@@ -1,15 +1,75 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import Optional
-from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
 
 from ..models.match import (
     Match, Event, MatchListResponse, EventListResponse, 
-    HighlightListResponse, MatchStatus, SportType
+    HighlightListResponse, MatchStatus, SportType, Team, Score, MatchEvent
 )
-from ..auth.jwt_auth import optional_auth
-from ..database.connection import db
+from ..models.user import UserResponse
+from ..auth.jwt_auth import get_current_user_optional
+from ..database.session import get_db
+from ..database.service import DatabaseService
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
+
+def convert_db_match_to_pydantic(db_match, db_service: DatabaseService) -> Match:
+    """Convert database match model to Pydantic model"""
+    home_team = db_service.get_team_by_id(db_match.home_team_id)
+    away_team = db_service.get_team_by_id(db_match.away_team_id)
+    
+    if not home_team or not away_team:
+        raise HTTPException(status_code=500, detail="Team information not found")
+    
+    # Get match events
+    match_events = []
+    for event in db_match.match_events:
+        match_events.append(MatchEvent(
+            event_id=event.event_id,
+            match_id=event.match_id,
+            event_type=event.event_type,
+            minute=event.minute,
+            team_id=event.team_id,
+            player_name=event.player_name,
+            description=event.description,
+            created_at=event.created_at
+        ))
+    
+    return Match(
+        match_id=db_match.match_id,
+        event_id=db_match.event_id,
+        home_team=Team(
+            team_id=home_team.team_id,
+            name=home_team.name,
+            short_name=home_team.short_name,
+            logo_url=home_team.logo_url,
+            colors=home_team.colors or {}
+        ),
+        away_team=Team(
+            team_id=away_team.team_id,
+            name=away_team.name,
+            short_name=away_team.short_name,
+            logo_url=away_team.logo_url,
+            colors=away_team.colors or {}
+        ),
+        sport_type=SportType(db_match.sport_type),
+        status=MatchStatus(db_match.status),
+        score=Score(
+            home_score=db_match.home_score,
+            away_score=db_match.away_score,
+            period_scores=db_match.period_scores or []
+        ),
+        start_time=db_match.start_time,
+        end_time=db_match.end_time,
+        venue=db_match.venue,
+        competition=db_match.competition,
+        round=db_match.round,
+        stream_url=db_match.stream_url,
+        events=match_events,
+        statistics=db_match.statistics or {},
+        created_at=db_match.created_at,
+        updated_at=db_match.updated_at
+    )
 
 # PUBLIC_INTERFACE
 @router.get("/", response_model=MatchListResponse, summary="Get matches list")
@@ -18,7 +78,8 @@ def get_matches(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     status: Optional[MatchStatus] = Query(None, description="Filter by match status"),
     sport: Optional[SportType] = Query(None, description="Filter by sport type"),
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get paginated list of matches
@@ -26,62 +87,96 @@ def get_matches(
     Returns a paginated list of matches with optional filtering by status and sport type.
     Authentication is optional - authenticated users may see personalized results.
     """
-    offset = (page - 1) * page_size
-    matches = db.get_matches(limit=page_size, offset=offset)
-    
-    # Apply filters
-    if status:
-        matches = [m for m in matches if m.status == status]
-    
-    if sport:
-        matches = [m for m in matches if m.sport_type == sport]
-    
-    # Sort by start time
-    matches.sort(key=lambda x: x.start_time)
-    
-    return MatchListResponse(
-        matches=matches,
-        total=len(matches),
-        page=page,
-        page_size=page_size
-    )
+    try:
+        db_service = DatabaseService(db)
+        offset = (page - 1) * page_size
+        matches, total = db_service.get_matches(
+            limit=page_size, 
+            offset=offset,
+            status=status,
+            sport=sport
+        )
+        
+        # Convert database models to Pydantic models
+        match_list = []
+        for match in matches:
+            try:
+                match_data = convert_db_match_to_pydantic(match, db_service)
+                match_list.append(match_data)
+            except Exception as e:
+                print(f"Error converting match {match.match_id}: {e}")
+                continue
+        
+        return MatchListResponse(
+            matches=match_list,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving matches: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.get("/live", response_model=MatchListResponse, summary="Get live matches")  
-def get_live_matches(user_id: Optional[str] = Depends(optional_auth)):
+def get_live_matches(
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
     """
     Get all currently live matches
     
     Returns all matches that are currently in progress.
     """
-    live_matches = db.get_live_matches()
-    
-    return MatchListResponse(
-        matches=live_matches,
-        total=len(live_matches),
-        page=1,
-        page_size=len(live_matches)
-    )
+    try:
+        db_service = DatabaseService(db)
+        matches = db_service.get_live_matches()
+        
+        # Convert database models to Pydantic models
+        match_list = []
+        for match in matches:
+            try:
+                match_data = convert_db_match_to_pydantic(match, db_service)
+                match_list.append(match_data)
+            except Exception as e:
+                print(f"Error converting live match {match.match_id}: {e}")
+                continue
+        
+        return MatchListResponse(
+            matches=match_list,
+            total=len(match_list),
+            page=1,
+            page_size=len(match_list)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving live matches: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.get("/{match_id}", response_model=Match, summary="Get match details")
 def get_match_details(
     match_id: str,
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get detailed information about a specific match
     
     Returns comprehensive match data including teams, score, events, and statistics.
     """
-    match = db.get_match_by_id(match_id)
-    if not match:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Match not found"
-        )
-    
-    return match
+    try:
+        db_service = DatabaseService(db)
+        match = db_service.get_match_by_id(match_id)
+        if not match:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Match not found"
+            )
+        
+        match_data = convert_db_match_to_pydantic(match, db_service)
+        return match_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving match: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.get("/{match_id}/highlights", response_model=HighlightListResponse, summary="Get match highlights")
@@ -89,32 +184,58 @@ def get_match_highlights(
     match_id: str,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=50, description="Page size"),
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get highlights for a specific match
     
     Returns video highlights and key moments from the match.
     """
-    match = db.get_match_by_id(match_id)
-    if not match:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Match not found"
+    try:
+        db_service = DatabaseService(db)
+        match = db_service.get_match_by_id(match_id)
+        if not match:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Match not found"
+            )
+        
+        offset = (page - 1) * page_size
+        highlights, total = db_service.get_highlights(
+            limit=page_size,
+            offset=offset,
+            match_id=match_id
         )
-    
-    highlights = db.get_highlights_by_match(match_id)
-    
-    # Apply pagination
-    offset = (page - 1) * page_size
-    paginated_highlights = highlights[offset:offset + page_size]
-    
-    return HighlightListResponse(
-        highlights=paginated_highlights,
-        total=len(highlights),
-        page=page,
-        page_size=page_size
-    )
+        
+        # Convert to Pydantic models
+        from ..models.match import Highlight
+        highlight_list = []
+        for highlight in highlights:
+            highlight_data = Highlight(
+                highlight_id=highlight.highlight_id,
+                match_id=highlight.match_id,
+                title=highlight.title,
+                description=highlight.description,
+                video_url=highlight.video_url,
+                thumbnail_url=highlight.thumbnail_url,
+                duration=highlight.duration,
+                tags=highlight.tags or [],
+                view_count=highlight.view_count,
+                created_at=highlight.created_at
+            )
+            highlight_list.append(highlight_data)
+        
+        return HighlightListResponse(
+            highlights=highlight_list,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving highlights: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.get("/schedule/upcoming", response_model=MatchListResponse, summary="Get upcoming matches")
@@ -122,38 +243,41 @@ def get_upcoming_matches(
     days: int = Query(7, ge=1, le=30, description="Number of days to look ahead"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get upcoming scheduled matches
     
     Returns matches scheduled within the specified number of days.
     """
-    end_date = datetime.utcnow() + timedelta(days=days)
-    
-    offset = (page - 1) * page_size
-    all_matches = db.get_matches(limit=1000, offset=0)  # Get more to filter
-    
-    # Filter for scheduled matches within date range
-    upcoming_matches = [
-        match for match in all_matches
-        if match.status == MatchStatus.SCHEDULED and 
-        match.start_time <= end_date and
-        match.start_time >= datetime.utcnow()
-    ]
-    
-    # Sort by start time
-    upcoming_matches.sort(key=lambda x: x.start_time)
-    
-    # Apply pagination
-    paginated_matches = upcoming_matches[offset:offset + page_size]
-    
-    return MatchListResponse(
-        matches=paginated_matches,
-        total=len(upcoming_matches),
-        page=page,
-        page_size=page_size
-    )
+    try:
+        db_service = DatabaseService(db)
+        offset = (page - 1) * page_size
+        matches, total = db_service.get_upcoming_matches(
+            days=days,
+            limit=page_size,
+            offset=offset
+        )
+        
+        # Convert database models to Pydantic models
+        match_list = []
+        for match in matches:
+            try:
+                match_data = convert_db_match_to_pydantic(match, db_service)
+                match_list.append(match_data)
+            except Exception as e:
+                print(f"Error converting upcoming match {match.match_id}: {e}")
+                continue
+        
+        return MatchListResponse(
+            matches=match_list,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving upcoming matches: {str(e)}")
 
 # Events endpoints
 events_router = APIRouter(prefix="/events", tags=["Events"])
@@ -165,49 +289,109 @@ def get_events(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     sport: Optional[SportType] = Query(None, description="Filter by sport type"),
     featured: Optional[bool] = Query(None, description="Filter featured events"),
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get paginated list of sports events
     
     Returns a list of sports events/tournaments with optional filtering.
     """
-    offset = (page - 1) * page_size
-    events = db.get_events(limit=page_size, offset=offset)
-    
-    # Apply filters
-    if sport:
-        events = [e for e in events if e.sport_type == sport]
-    
-    if featured is not None:
-        events = [e for e in events if e.is_featured == featured]
-    
-    return EventListResponse(
-        events=events,
-        total=len(events),
-        page=page,
-        page_size=page_size
-    )
+    try:
+        db_service = DatabaseService(db)
+        offset = (page - 1) * page_size
+        events, total = db_service.get_events(
+            limit=page_size,
+            offset=offset,
+            sport=sport,
+            featured=featured
+        )
+        
+        # Convert database models to Pydantic models
+        event_list = []
+        for event in events:
+            event_data = Event(
+                event_id=event.event_id,
+                name=event.name,
+                description=event.description,
+                sport_type=SportType(event.sport_type),
+                start_date=event.start_date,
+                end_date=event.end_date,
+                location=event.location,
+                organizer=event.organizer,
+                logo_url=event.logo_url,
+                banner_url=event.banner_url,
+                is_featured=event.is_featured,
+                matches=[],  # Will be populated separately if needed
+                created_at=event.created_at,
+                updated_at=event.updated_at
+            )
+            event_list.append(event_data)
+        
+        return EventListResponse(
+            events=event_list,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving events: {str(e)}")
 
 # PUBLIC_INTERFACE
 @events_router.get("/{event_id}", response_model=Event, summary="Get event details")
 def get_event_details(
     event_id: str,
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get detailed information about a specific event
     
     Returns comprehensive event data including matches and tournament information.
     """
-    event = db.get_event_by_id(event_id)
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
+    try:
+        db_service = DatabaseService(db)
+        event = db_service.get_event_by_id(event_id)
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
+            )
+        
+        # Get matches for this event
+        event_matches, _ = db_service.get_event_matches(event_id, limit=100, offset=0)
+        
+        matches_list = []
+        for match in event_matches:
+            try:
+                match_data = convert_db_match_to_pydantic(match, db_service)
+                matches_list.append(match_data)
+            except Exception as e:
+                print(f"Error converting event match {match.match_id}: {e}")
+                continue
+        
+        event_data = Event(
+            event_id=event.event_id,
+            name=event.name,
+            description=event.description,
+            sport_type=SportType(event.sport_type),
+            start_date=event.start_date,
+            end_date=event.end_date,
+            location=event.location,
+            organizer=event.organizer,
+            logo_url=event.logo_url,
+            banner_url=event.banner_url,
+            is_featured=event.is_featured,
+            matches=matches_list,
+            created_at=event.created_at,
+            updated_at=event.updated_at
         )
-    
-    return event
+        
+        return event_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving event: {str(e)}")
 
 # PUBLIC_INTERFACE
 @events_router.get("/{event_id}/matches", response_model=MatchListResponse, summary="Get event matches")
@@ -216,41 +400,51 @@ def get_event_matches(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     status: Optional[MatchStatus] = Query(None, description="Filter by match status"),
-    user_id: Optional[str] = Depends(optional_auth)
+    current_user: Optional[UserResponse] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Get matches for a specific event
     
     Returns all matches that belong to the specified event/tournament.
     """
-    event = db.get_event_by_id(event_id)
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
+    try:
+        db_service = DatabaseService(db)
+        event = db_service.get_event_by_id(event_id)
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
+            )
+        
+        offset = (page - 1) * page_size
+        matches, total = db_service.get_event_matches(
+            event_id=event_id,
+            limit=page_size,
+            offset=offset,
+            status=status
         )
-    
-    # Get all matches for this event
-    all_matches = db.get_matches(limit=1000, offset=0)
-    event_matches = [m for m in all_matches if m.event_id == event_id]
-    
-    # Apply status filter
-    if status:
-        event_matches = [m for m in event_matches if m.status == status]
-    
-    # Sort by start time
-    event_matches.sort(key=lambda x: x.start_time)
-    
-    # Apply pagination
-    offset = (page - 1) * page_size
-    paginated_matches = event_matches[offset:offset + page_size]
-    
-    return MatchListResponse(
-        matches=paginated_matches,
-        total=len(event_matches),
-        page=page,
-        page_size=page_size
-    )
+        
+        # Convert database models to Pydantic models
+        match_list = []
+        for match in matches:
+            try:
+                match_data = convert_db_match_to_pydantic(match, db_service)
+                match_list.append(match_data)
+            except Exception as e:
+                print(f"Error converting event match {match.match_id}: {e}")
+                continue
+        
+        return MatchListResponse(
+            matches=match_list,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving event matches: {str(e)}")
 
 # Include events router
 router.include_router(events_router)

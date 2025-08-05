@@ -1,145 +1,208 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from typing import Dict, Any
+from sqlalchemy.orm import Session
 
-from ..models.user import UserCreate, UserLogin, UserResponse, TokenData, UserUpdate
-from ..auth.jwt_auth import JWTAuth, get_current_user_id, get_current_user
-from ..database.connection import db
+from ..models.user import UserCreate, UserLogin, UserUpdate, UserResponse, TokenData
+from ..auth.jwt_auth import create_access_token, get_password_hash, verify_password, get_current_user
+from ..database.session import get_db
+from ..database.service import DatabaseService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # PUBLIC_INTERFACE
 @router.post("/register", response_model=TokenData, summary="Register new user")
-def register_user(user_data: UserCreate):
+def register_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db)
+):
     """
     Register a new user account
-    
+
     Creates a new user account with the provided information and returns
     an access token for immediate authentication.
     """
-    # Check if user already exists
-    existing_user = db.get_user_by_email(user_data.email)
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    try:
+        db_service = DatabaseService(db)
+        
+        # Check if user already exists
+        existing_user = db_service.get_user_by_email(user_data.email)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Hash the password
+        password_hash = get_password_hash(user_data.password)
+        
+        # Create user
+        db_user = db_service.create_user(user_data, password_hash)
+        
+        # Create access token
+        access_token = create_access_token(data={"sub": db_user.user_id})
+        
+        # Convert to response model
+        user_response = UserResponse(
+            user_id=db_user.user_id,
+            email=db_user.email,
+            username=db_user.username,
+            full_name=db_user.full_name,
+            avatar_url=db_user.avatar_url,
+            role=db_user.role,
+            preferences=db_user.preferences or {},
+            is_active=db_user.is_active,
+            created_at=db_user.created_at,
+            updated_at=db_user.updated_at
         )
-    
-    # Create new user
-    user = db.create_user(user_data)
-    
-    # Create access token
-    access_token = JWTAuth.create_access_token(
-        data={"sub": user.user_id, "email": user.email}
-    )
-    
-    return TokenData(
-        access_token=access_token,
-        token_type="bearer",
-        expires_in=1440 * 60,  # 24 hours in seconds
-        user=UserResponse(**user.dict())
-    )
+        
+        return TokenData(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=1800,  # 30 minutes
+            user=user_response
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating user: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.post("/login", response_model=TokenData, summary="User login")
-def login_user(login_data: UserLogin):
+def login_user(
+    user_data: UserLogin,
+    db: Session = Depends(get_db)
+):
     """
     Authenticate user and return access token
-    
+
     Validates user credentials and returns a JWT token for API access.
     """
-    # Get user by email
-    user = db.get_user_by_email(login_data.email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+    try:
+        db_service = DatabaseService(db)
+        
+        # Get user by email
+        db_user = db_service.get_user_by_email(user_data.email)
+        if not db_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Verify password
+        if not verify_password(user_data.password, db_user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Check if user is active
+        if not db_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is disabled"
+            )
+        
+        # Create access token
+        access_token = create_access_token(data={"sub": db_user.user_id})
+        
+        # Convert to response model
+        user_response = UserResponse(
+            user_id=db_user.user_id,
+            email=db_user.email,
+            username=db_user.username,
+            full_name=db_user.full_name,
+            avatar_url=db_user.avatar_url,
+            role=db_user.role,
+            preferences=db_user.preferences or {},
+            is_active=db_user.is_active,
+            created_at=db_user.created_at,
+            updated_at=db_user.updated_at
         )
-    
-    # For demo purposes, we'll accept any password
-    # In production, verify against hashed password
-    # if not JWTAuth.verify_password(login_data.password, user.hashed_password):
-    #     raise HTTPException(
-    #         status_code=status.HTTP_401_UNAUTHORIZED,
-    #         detail="Invalid email or password"
-    #     )
-    
-    # Create access token
-    access_token = JWTAuth.create_access_token(
-        data={"sub": user.user_id, "email": user.email}
-    )
-    
-    return TokenData(
-        access_token=access_token,
-        token_type="bearer", 
-        expires_in=1440 * 60,  # 24 hours in seconds
-        user=UserResponse(**user.dict())
-    )
+        
+        return TokenData(
+            access_token=access_token,
+            token_type="bearer", 
+            expires_in=1800,  # 30 minutes
+            user=user_response
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login error: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.get("/me", response_model=UserResponse, summary="Get current user")
-def get_current_user_profile(current_user_id: str = Depends(get_current_user_id)):
+def get_current_user_profile(
+    current_user: UserResponse = Depends(get_current_user)
+):
     """
     Get current authenticated user's profile
-    
+
     Returns the profile information for the currently authenticated user.
     """
-    user = db.get_user_by_id(current_user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    return UserResponse(**user.dict())
+    return current_user
 
 # PUBLIC_INTERFACE
 @router.put("/me", response_model=UserResponse, summary="Update current user")
 def update_current_user_profile(
-    user_update: UserUpdate,
-    current_user_id: str = Depends(get_current_user_id)
+    user_data: UserUpdate,
+    current_user: UserResponse = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     Update current authenticated user's profile
-    
+
     Updates the profile information for the currently authenticated user.
     """
-    user = db.get_user_by_id(current_user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+    try:
+        db_service = DatabaseService(db)
+        
+        # Update user
+        updated_user = db_service.update_user(current_user.user_id, user_data)
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Convert to response model
+        user_response = UserResponse(
+            user_id=updated_user.user_id,
+            email=updated_user.email,
+            username=updated_user.username,
+            full_name=updated_user.full_name,
+            avatar_url=updated_user.avatar_url,
+            role=updated_user.role,
+            preferences=updated_user.preferences or {},
+            is_active=updated_user.is_active,
+            created_at=updated_user.created_at,
+            updated_at=updated_user.updated_at
         )
-    
-    # Update user fields
-    update_data = user_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(user, field, value)
-    
-    return UserResponse(**user.dict())
+        
+        return user_response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating user: {str(e)}")
 
 # PUBLIC_INTERFACE
 @router.post("/refresh", response_model=TokenData, summary="Refresh access token")
-def refresh_access_token(current_user: Dict[str, Any] = Depends(get_current_user)):
+def refresh_access_token(
+    current_user: UserResponse = Depends(get_current_user)
+):
     """
     Refresh the access token
-    
+
     Issues a new access token for the authenticated user.
     """
-    user = db.get_user_by_id(current_user["sub"])
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+    try:
+        # Create new access token
+        access_token = create_access_token(data={"sub": current_user.user_id})
+        
+        return TokenData(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=1800,  # 30 minutes
+            user=current_user
         )
-    
-    # Create new access token
-    access_token = JWTAuth.create_access_token(
-        data={"sub": user.user_id, "email": user.email}
-    )
-    
-    return TokenData(
-        access_token=access_token,
-        token_type="bearer",
-        expires_in=1440 * 60,  # 24 hours in seconds
-        user=UserResponse(**user.dict())
-    )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing token: {str(e)}")

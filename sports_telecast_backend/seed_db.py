@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Database seeding script for Sports Telecast Backend
 
@@ -6,24 +7,37 @@ This script populates the database with initial sample data for development and 
 
 import asyncio
 import sys
-import os
+from pathlib import Path
 from datetime import datetime, timedelta
 import uuid
 import random
 
-# Add the project root to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# Add the src directory to Python path
+src_path = Path(__file__).parent / "src"
+sys.path.insert(0, str(src_path))
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from passlib.context import CryptContext
+from dotenv import load_dotenv
+import logging
 
-from src.database.connection import get_db_session
-from src.database.models import (
+from database.connection import get_db_session, check_database_connection
+from database.models import (
     UserDB, TeamDB, EventDB, MatchDB, EmojiAssetDB, HighlightDB,
     MatchEventDB, UserEmojiReactionDB,
     SportTypeEnum, MatchStatusEnum, UserRoleEnum, EmojiTypeEnum
 )
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -44,36 +58,43 @@ async def seed_database():
             existing_users_result = await session.execute(text("SELECT COUNT(*) FROM users"))
             if existing_users_result.scalar() > 0:
                 print("⚠️ Database already contains data. Skipping seeding.")
-                return
+                return True
         except Exception as e:
             print(f"⚠️ Could not check existing data: {e}")
             print("Proceeding with seeding...")
         
-        # Seed emoji assets first
-        emojis = await seed_emojis(session)
-        
-        # Seed teams
-        teams = await seed_teams(session)
-        
-        # Seed events
-        events = await seed_events(session)
-        
-        # Seed matches
-        matches = await seed_matches(session, teams, events)
-        
-        # Seed users
-        users = await seed_users(session)
-        
-        # Seed match events
-        await seed_match_events(session, matches, teams)
-        
-        # Seed highlights
-        await seed_highlights(session)
-        
-        # Seed user emoji reactions
-        await seed_user_emoji_reactions(session, users, emojis)
-        
-        print("✅ Database seeding completed successfully!")
+        try:
+            # Seed emoji assets first
+            emojis = await seed_emojis(session)
+            
+            # Seed teams
+            teams = await seed_teams(session)
+            
+            # Seed events
+            events = await seed_events(session)
+            
+            # Seed matches
+            matches = await seed_matches(session, teams, events)
+            
+            # Seed users
+            users = await seed_users(session)
+            
+            # Seed match events
+            await seed_match_events(session, matches, teams)
+            
+            # Seed highlights
+            await seed_highlights(session)
+            
+            # Seed user emoji reactions
+            await seed_user_emoji_reactions(session, users, emojis)
+            
+            print("✅ Database seeding completed successfully!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Database seeding failed: {e}")
+            print(f"❌ Error: {e}")
+            return False
 
 async def seed_emojis(session: AsyncSession):
     """Seed emoji assets"""
@@ -83,7 +104,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ103",
             "emoji_type": EmojiTypeEnum.CLAP,
-            "image_url": "https://cdn.mydomain.com/emojis/clap.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/clap.png",
             "name": "Clap",
             "description": "Show appreciation",
             "sort_order": 1
@@ -91,7 +112,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ104", 
             "emoji_type": EmojiTypeEnum.FIRE,
-            "image_url": "https://cdn.mydomain.com/emojis/fire.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/fire.png",
             "name": "Fire",
             "description": "Amazing play!",
             "sort_order": 2
@@ -99,7 +120,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ105",
             "emoji_type": EmojiTypeEnum.HEART,
-            "image_url": "https://cdn.mydomain.com/emojis/heart.png", 
+            "image_url": "https://cdn.sportstelecast.com/emojis/heart.png", 
             "name": "Love",
             "description": "Love this moment",
             "sort_order": 3
@@ -107,7 +128,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ106",
             "emoji_type": EmojiTypeEnum.THUMBS_UP,
-            "image_url": "https://cdn.mydomain.com/emojis/thumbs_up.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/thumbs_up.png",
             "name": "Thumbs Up", 
             "description": "Great job!",
             "sort_order": 4
@@ -115,7 +136,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ107",
             "emoji_type": EmojiTypeEnum.GOAL,
-            "image_url": "https://cdn.mydomain.com/emojis/goal.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/goal.png",
             "name": "Goal",
             "description": "GOAL!!!",
             "sort_order": 5
@@ -123,7 +144,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ108",
             "emoji_type": EmojiTypeEnum.CELEBRATION,
-            "image_url": "https://cdn.mydomain.com/emojis/celebration.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/celebration.png",
             "name": "Celebration",
             "description": "Let's celebrate!",
             "sort_order": 6
@@ -131,7 +152,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ109",
             "emoji_type": EmojiTypeEnum.SHOCKED,
-            "image_url": "https://cdn.mydomain.com/emojis/shocked.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/shocked.png",
             "name": "Shocked",
             "description": "What a surprise!",
             "sort_order": 7
@@ -139,7 +160,7 @@ async def seed_emojis(session: AsyncSession):
         {
             "emoji_id": "EMJ110",
             "emoji_type": EmojiTypeEnum.LAUGH,
-            "image_url": "https://cdn.mydomain.com/emojis/laugh.png",
+            "image_url": "https://cdn.sportstelecast.com/emojis/laugh.png",
             "name": "Laugh",
             "description": "That was funny!",
             "sort_order": 8
@@ -165,56 +186,56 @@ async def seed_teams(session: AsyncSession):
             "team_id": "TEAM001",
             "name": "Arsenal FC",
             "short_name": "ARS",
-            "logo_url": "https://cdn.example.com/logos/arsenal.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/arsenal.png",
             "colors": {"primary": "#DC143C", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM002", 
             "name": "Chelsea FC",
             "short_name": "CHE",
-            "logo_url": "https://cdn.example.com/logos/chelsea.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/chelsea.png",
             "colors": {"primary": "#034694", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM003",
             "name": "Manchester United",
             "short_name": "MUN",
-            "logo_url": "https://cdn.example.com/logos/manchester_united.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/manchester_united.png",
             "colors": {"primary": "#FF0000", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM004",
             "name": "Liverpool FC",
             "short_name": "LIV",
-            "logo_url": "https://cdn.example.com/logos/liverpool.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/liverpool.png",
             "colors": {"primary": "#C8102E", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM005",
             "name": "Manchester City",
             "short_name": "MCI",
-            "logo_url": "https://cdn.example.com/logos/manchester_city.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/manchester_city.png",
             "colors": {"primary": "#6CABDD", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM006",
             "name": "Tottenham Hotspur",
             "short_name": "TOT",
-            "logo_url": "https://cdn.example.com/logos/tottenham.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/tottenham.png",
             "colors": {"primary": "#132257", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM007",
             "name": "Newcastle United",
             "short_name": "NEW",
-            "logo_url": "https://cdn.example.com/logos/newcastle.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/newcastle.png",
             "colors": {"primary": "#000000", "secondary": "#FFFFFF"}
         },
         {
             "team_id": "TEAM008",
             "name": "Brighton & Hove Albion",
             "short_name": "BHA",
-            "logo_url": "https://cdn.example.com/logos/brighton.png",
+            "logo_url": "https://cdn.sportstelecast.com/logos/brighton.png",
             "colors": {"primary": "#0057B8", "secondary": "#FFCD00"}
         }
     ]
@@ -243,8 +264,8 @@ async def seed_events(session: AsyncSession):
             "end_date": datetime.utcnow() + timedelta(days=200),
             "location": "England",
             "organizer": "Premier League",
-            "logo_url": "https://cdn.example.com/logos/premier_league.png",
-            "banner_url": "https://cdn.example.com/banners/premier_league.jpg",
+            "logo_url": "https://cdn.sportstelecast.com/logos/premier_league.png",
+            "banner_url": "https://cdn.sportstelecast.com/banners/premier_league.jpg",
             "is_featured": True
         },
         {
@@ -256,8 +277,8 @@ async def seed_events(session: AsyncSession):
             "end_date": datetime.utcnow() + timedelta(days=180),
             "location": "Europe",
             "organizer": "UEFA",
-            "logo_url": "https://cdn.example.com/logos/champions_league.png",
-            "banner_url": "https://cdn.example.com/banners/champions_league.jpg",
+            "logo_url": "https://cdn.sportstelecast.com/logos/champions_league.png",
+            "banner_url": "https://cdn.sportstelecast.com/banners/champions_league.jpg",
             "is_featured": True
         },
         {
@@ -269,8 +290,8 @@ async def seed_events(session: AsyncSession):
             "end_date": datetime.utcnow() + timedelta(days=120),
             "location": "England",
             "organizer": "The FA",
-            "logo_url": "https://cdn.example.com/logos/fa_cup.png",
-            "banner_url": "https://cdn.example.com/banners/fa_cup.jpg",
+            "logo_url": "https://cdn.sportstelecast.com/logos/fa_cup.png",
+            "banner_url": "https://cdn.sportstelecast.com/banners/fa_cup.jpg",
             "is_featured": False
         }
     ]
@@ -303,7 +324,7 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict):
             "venue": "Emirates Stadium",
             "competition": "Premier League",
             "round": "Matchday 15",
-            "stream_url": "https://stream.example.com/match001",
+            "stream_url": "https://stream.sportstelecast.com/match001",
             "statistics": {
                 "possession": {"home": 58, "away": 42},
                 "shots": {"home": 12, "away": 8},
@@ -323,7 +344,7 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict):
             "venue": "Old Trafford",
             "competition": "Premier League",
             "round": "Matchday 15",
-            "stream_url": "https://stream.example.com/match002"
+            "stream_url": "https://stream.sportstelecast.com/match002"
         },
         {
             "match_id": "MATCH003",
@@ -416,7 +437,7 @@ async def seed_users(session: AsyncSession):
             "full_name": "System Administrator",
             "role": UserRoleEnum.ADMIN,
             "is_active": True,
-            "avatar_url": "https://cdn.example.com/avatars/admin.jpg",
+            "avatar_url": "https://cdn.sportstelecast.com/avatars/admin.jpg",
             "preferences": {
                 "favorite_teams": ["TEAM001", "TEAM003"],
                 "favorite_sports": ["football"],
@@ -433,7 +454,7 @@ async def seed_users(session: AsyncSession):
             "full_name": "John Doe",
             "role": UserRoleEnum.USER,
             "is_active": True,
-            "avatar_url": "https://cdn.example.com/avatars/john.jpg",
+            "avatar_url": "https://cdn.sportstelecast.com/avatars/john.jpg",
             "preferences": {
                 "favorite_teams": ["TEAM002", "TEAM004"],
                 "favorite_sports": ["football"],
@@ -450,7 +471,7 @@ async def seed_users(session: AsyncSession):
             "full_name": "Sarah Wilson",
             "role": UserRoleEnum.USER,
             "is_active": True,
-            "avatar_url": "https://cdn.example.com/avatars/sarah.jpg",
+            "avatar_url": "https://cdn.sportstelecast.com/avatars/sarah.jpg",
             "preferences": {
                 "favorite_teams": ["TEAM001", "TEAM005"],
                 "favorite_sports": ["football"],
@@ -467,7 +488,7 @@ async def seed_users(session: AsyncSession):
             "full_name": "Mike Brown",
             "role": UserRoleEnum.MODERATOR,
             "is_active": True,
-            "avatar_url": "https://cdn.example.com/avatars/mike.jpg",
+            "avatar_url": "https://cdn.sportstelecast.com/avatars/mike.jpg",
             "preferences": {
                 "favorite_teams": ["TEAM006", "TEAM002"],
                 "favorite_sports": ["football"],
@@ -484,7 +505,7 @@ async def seed_users(session: AsyncSession):
             "full_name": "Emma Garcia",
             "role": UserRoleEnum.USER,
             "is_active": True,
-            "avatar_url": "https://cdn.example.com/avatars/emma.jpg",
+            "avatar_url": "https://cdn.sportstelecast.com/avatars/emma.jpg",
             "preferences": {
                 "favorite_teams": ["TEAM007", "TEAM008"],
                 "favorite_sports": ["football"],
@@ -680,8 +701,8 @@ async def seed_highlights(session: AsyncSession):
             "match_id": "MATCH003",
             "title": "Arsenal vs Liverpool - All Goals & Highlights",
             "description": "Watch all the goals and best moments from this thrilling 3-2 victory",
-            "video_url": "https://cdn.example.com/highlights/match003.mp4",
-            "thumbnail_url": "https://cdn.example.com/thumbnails/match003.jpg",
+            "video_url": "https://cdn.sportstelecast.com/highlights/match003.mp4",
+            "thumbnail_url": "https://cdn.sportstelecast.com/thumbnails/match003.jpg",
             "duration": 300,
             "tags": ["goals", "highlights", "premier-league", "arsenal", "liverpool"],
             "view_count": 15420
@@ -691,8 +712,8 @@ async def seed_highlights(session: AsyncSession):
             "match_id": "MATCH001",
             "title": "Arsenal vs Chelsea - Live Match Highlights",
             "description": "Best moments from the ongoing match",
-            "video_url": "https://cdn.example.com/highlights/match001.mp4", 
-            "thumbnail_url": "https://cdn.example.com/thumbnails/match001.jpg",
+            "video_url": "https://cdn.sportstelecast.com/highlights/match001.mp4", 
+            "thumbnail_url": "https://cdn.sportstelecast.com/thumbnails/match001.jpg",
             "duration": 180,
             "tags": ["live", "highlights", "arsenal", "chelsea", "premier-league"],
             "view_count": 8934
@@ -702,8 +723,8 @@ async def seed_highlights(session: AsyncSession):
             "match_id": "MATCH003",
             "title": "Martin Odegaard's Winning Goal - Arsenal vs Liverpool",
             "description": "The decisive goal that sealed Arsenal's victory in the 89th minute",
-            "video_url": "https://cdn.example.com/highlights/goal_match003.mp4",
-            "thumbnail_url": "https://cdn.example.com/thumbnails/goal_match003.jpg",
+            "video_url": "https://cdn.sportstelecast.com/highlights/goal_match003.mp4",
+            "thumbnail_url": "https://cdn.sportstelecast.com/thumbnails/goal_match003.jpg",
             "duration": 45,
             "tags": ["goal", "winner", "arsenal", "odegaard"],
             "view_count": 25000
@@ -713,8 +734,8 @@ async def seed_highlights(session: AsyncSession):
             "match_id": "MATCH005",
             "title": "Chelsea vs Man City - Champions League Highlights",
             "description": "Sterling's goal secures victory for Chelsea in the Champions League",
-            "video_url": "https://cdn.example.com/highlights/match005.mp4",
-            "thumbnail_url": "https://cdn.example.com/thumbnails/match005.jpg",
+            "video_url": "https://cdn.sportstelecast.com/highlights/match005.mp4",
+            "thumbnail_url": "https://cdn.sportstelecast.com/thumbnails/match005.jpg",
             "duration": 240,
             "tags": ["champions-league", "chelsea", "manchester-city", "sterling"],
             "view_count": 12750
@@ -724,8 +745,8 @@ async def seed_highlights(session: AsyncSession):
             "match_id": "MATCH006",
             "title": "Newcastle vs Brighton - Thrilling 2-2 Draw",
             "description": "Four goals in an entertaining draw at St. James' Park",
-            "video_url": "https://cdn.example.com/highlights/match006.mp4",
-            "thumbnail_url": "https://cdn.example.com/thumbnails/match006.jpg",
+            "video_url": "https://cdn.sportstelecast.com/highlights/match006.mp4",
+            "thumbnail_url": "https://cdn.sportstelecast.com/thumbnails/match006.jpg",
             "duration": 280,
             "tags": ["draw", "goals", "newcastle", "brighton", "premier-league"],
             "view_count": 9200
@@ -735,8 +756,8 @@ async def seed_highlights(session: AsyncSession):
             "match_id": "MATCH001",
             "title": "Gabriel Jesus Goal - Arsenal vs Chelsea",
             "description": "Arsenal's opening goal in the live match",
-            "video_url": "https://cdn.example.com/highlights/jesus_goal.mp4",
-            "thumbnail_url": "https://cdn.example.com/thumbnails/jesus_goal.jpg",
+            "video_url": "https://cdn.sportstelecast.com/highlights/jesus_goal.mp4",
+            "thumbnail_url": "https://cdn.sportstelecast.com/thumbnails/jesus_goal.jpg",
             "duration": 30,
             "tags": ["goal", "arsenal", "gabriel-jesus", "live"],
             "view_count": 18500
@@ -825,6 +846,45 @@ async def seed_user_emoji_reactions(session: AsyncSession, users: dict, emojis: 
     await session.commit()
     print(f"   ✅ Added {len(reactions_data)} user emoji reactions")
 
-# CLI script entry point
+async def main():
+    """Main function to run database seeding"""
+    print("🚀 Sports Telecast Database Seeding")
+    print("=" * 50)
+    
+    try:
+        # Check database connection first
+        print("🔗 Checking database connection...")
+        if await check_database_connection():
+            print("✅ Database connection successful")
+        else:
+            print("❌ Database connection failed")
+            return False
+            
+        # Run seeding
+        success = await seed_database()
+        
+        if success:
+            print("\n🎉 Database seeding completed!")
+            print("\nSeeded tables:")
+            print("  • users - 5 sample users (admin, johndoe, sarahw, mikeb, emmag)")
+            print("  • teams - 8 Premier League teams")
+            print("  • events - 3 sports events (Premier League, Champions League, FA Cup)")
+            print("  • matches - 6 matches with various statuses")
+            print("  • match_events - 16 match events (goals, cards, substitutions)")
+            print("  • emoji_assets - 8 emoji reaction types")
+            print("  • user_emoji_reactions - 100+ user reactions to match events")
+            print("  • highlights - 6 match highlight videos")
+            print("\nLogin credentials:")
+            print("  Admin: admin@sportstelecast.com / admin123")
+            print("  User: john.doe@example.com / password123")
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"Database seeding failed: {e}")
+        print(f"❌ Error: {e}")
+        return False
+
 if __name__ == "__main__":
-    asyncio.run(seed_database())
+    success = asyncio.run(main())
+    sys.exit(0 if success else 1)

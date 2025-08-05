@@ -10,6 +10,13 @@ from .matches import router as matches_router
 from .emoji import router as emoji_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
+from .teams import router as teams_router
+from .categories import router as categories_router
+from .chat import router as chat_router
+
+# Import database initialization
+from ..database.session import init_database
+from ..database.seed import seed_database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,10 +24,32 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events"""
-    logger.info("🚀 Sports Telecast Backend starting up...")
+    """Handle application startup and shutdown"""
+    # Startup
+    try:
+        logger.info("🚀 Starting Sports Telecast API...")
+        
+        # Initialize database
+        init_database()
+        logger.info("✓ Database initialized")
+        
+        # Seed database if needed
+        try:
+            seed_database()
+            logger.info("✓ Database seeded")
+        except Exception as e:
+            logger.warning(f"⚠️  Database seeding warning (may already be seeded): {e}")
+        
+        logger.info("✅ API startup completed successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Startup error: {e}")
+        raise
+    
     yield
-    logger.info("🛑 Sports Telecast Backend shutting down...")
+    
+    # Shutdown
+    logger.info("🛑 Shutting down Sports Telecast API...")
 
 # Create FastAPI app with metadata for OpenAPI documentation
 app = FastAPI(
@@ -78,7 +107,49 @@ app = FastAPI(
         "name": "MIT License",
         "url": "https://opensource.org/licenses/MIT",
     },
-    lifespan=lifespan
+    lifespan=lifespan,
+    openapi_tags=[
+        {
+            "name": "Health",
+            "description": "Health check and API status endpoints"
+        },
+        {
+            "name": "Authentication", 
+            "description": "User authentication, registration, and JWT token management"
+        },
+        {
+            "name": "Matches",
+            "description": "Live matches, scores, events, and schedules"
+        },
+        {
+            "name": "Events", 
+            "description": "Sports events, tournaments, and competitions"
+        },
+        {
+            "name": "Fan Engagement - Emojis",
+            "description": "Interactive emoji reactions for live events with real-time updates"
+        },
+        {
+            "name": "Highlights",
+            "description": "Match highlights, video content, and key moments"
+        },
+        {
+            "name": "WebSocket",
+            "description": "Real-time WebSocket connections for live updates and emoji reactions"
+        },
+        {
+            "name": "Teams",
+            "description": "Teams management and information"
+        },
+        {
+            "name": "Categories",
+            "description": "Sports categories and classification"
+        },
+        {
+            "name": "Chat",
+            "description": "Live chat messaging for matches and events"
+        }
+    ]
 )
 
 # CORS middleware configuration
@@ -122,14 +193,20 @@ def health_check():
             "WebSocket support for live connections",
             "JWT-based authentication",
             "Match highlights and video content",
-            "Event schedules and tournament info"
+            "Event schedules and tournament info",
+            "Team management",
+            "Sports categories",
+            "Live chat messaging"
         ],
         "endpoints": {
             "authentication": "/auth/*",
             "matches": "/matches/*", 
-            "events": "/events/*",
+            "events": "/matches/events/*",
             "emoji_reactions": "/fan-engagement/emoji/v1/*",
             "highlights": "/highlights/*",
+            "teams": "/teams/*",
+            "categories": "/categories/*",
+            "chat": "/chat/*",
             "websocket": "/ws/{event_id}",
             "api_docs": "/docs",
             "openapi_spec": "/openapi.json"
@@ -142,40 +219,9 @@ app.include_router(matches_router)
 app.include_router(emoji_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
-
-# API documentation tags
-tags_metadata = [
-    {
-        "name": "Health",
-        "description": "Health check and API status endpoints"
-    },
-    {
-        "name": "Authentication", 
-        "description": "User authentication, registration, and JWT token management"
-    },
-    {
-        "name": "Matches",
-        "description": "Live matches, scores, events, and schedules"
-    },
-    {
-        "name": "Events", 
-        "description": "Sports events, tournaments, and competitions"
-    },
-    {
-        "name": "Fan Engagement - Emojis",
-        "description": "Interactive emoji reactions for live events with real-time updates"
-    },
-    {
-        "name": "Highlights",
-        "description": "Match highlights, video content, and key moments"
-    },
-    {
-        "name": "WebSocket",
-        "description": "Real-time WebSocket connections for live updates and emoji reactions"
-    }
-]
-
-app.openapi_tags = tags_metadata
+app.include_router(teams_router)
+app.include_router(categories_router)
+app.include_router(chat_router)
 
 if __name__ == "__main__":
     import uvicorn

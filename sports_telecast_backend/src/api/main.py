@@ -18,12 +18,21 @@ from .chat import router as chat_router
 from ..database.session import init_database
 from ..database.seed import seed_database
 
+# Import database components
+from ..database import (
+    init_database, 
+    close_database_connections, 
+    check_database_connection,
+    get_database_health
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+<<<<<<< HEAD
     """Handle application startup and shutdown"""
     # Startup
     try:
@@ -50,6 +59,36 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Shutting down Sports Telecast API...")
+=======
+    """Application lifespan events"""
+    logger.info("🚀 Sports Telecast Backend starting up...")
+    
+    # Initialize database
+    try:
+        logger.info("🔗 Initializing database connection...")
+        await init_database()
+        
+        # Check database connection
+        if await check_database_connection():
+            logger.info("✅ Database connection established successfully")
+        else:
+            logger.warning("⚠️ Database connection check failed")
+            
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        # Don't raise the exception to allow the app to start even if DB is not available
+        # This allows for graceful degradation
+    
+    yield
+    
+    # Cleanup on shutdown
+    logger.info("🛑 Sports Telecast Backend shutting down...")
+    try:
+        await close_database_connections()
+        logger.info("🔌 Database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing database connections: {e}")
+>>>>>>> cga-cg908b179b
 
 # Create FastAPI app with metadata for OpenAPI documentation
 app = FastAPI(
@@ -176,17 +215,21 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Health check endpoint
 @app.get("/", tags=["Health"], summary="Health Check")
-def health_check():
+async def health_check():
     """
     Health check endpoint
     
     Returns the API status and basic information.
     Use this endpoint to verify the API is running correctly.
     """
+    # Get database health
+    db_health = await get_database_health()
+    
     return {
         "message": "Sports Telecast Backend API is running! 🏟️⚽",
         "status": "healthy",
         "version": "1.0.0",
+        "database": db_health,
         "features": [
             "Live match data and scores",
             "Emoji reactions with real-time updates", 
@@ -211,6 +254,20 @@ def health_check():
             "api_docs": "/docs",
             "openapi_spec": "/openapi.json"
         }
+    }
+
+# Database health check endpoint
+@app.get("/health/database", tags=["Health"], summary="Database Health Check")
+async def database_health_check():
+    """
+    Database health check endpoint
+    
+    Returns detailed database connection and health information.
+    """
+    db_health = await get_database_health()
+    return {
+        "timestamp": "2024-01-01T12:00:00Z",
+        "database": db_health
     }
 
 # Include API routers

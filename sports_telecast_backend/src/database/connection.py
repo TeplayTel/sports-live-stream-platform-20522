@@ -157,7 +157,7 @@ async def get_database_health() -> dict:
     try:
         async with engine.begin() as conn:
             result = await conn.execute(text("SELECT 1"))
-            await result.fetchone()
+            result.fetchone()  # Remove await here since fetchone() is not async
         
         return {
             "status": "healthy",

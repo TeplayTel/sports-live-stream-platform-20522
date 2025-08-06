@@ -9,24 +9,34 @@ from ..database.service import DatabaseService
 =======
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any
+from passlib.context import CryptContext
 
 from ..models.user import UserCreate, UserLogin, UserResponse, TokenData, UserUpdate
 from ..auth.jwt_auth import JWTAuth, get_current_user_id, get_current_user
 from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
+<<<<<<< HEAD
 import bcrypt
+>>>>>>> cga-cg908b179b
+=======
+from sqlalchemy.ext.asyncio import AsyncSession
 >>>>>>> cga-cg908b179b
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # PUBLIC_INTERFACE
 @router.post("/register", response_model=TokenData, summary="Register new user")
+<<<<<<< HEAD
 <<<<<<< HEAD
 def register_user(
     user_data: UserCreate,
     db: Session = Depends(get_db)
 ):
+=======
+async def register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+>>>>>>> cga-cg908b179b
 =======
 async def register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
 >>>>>>> cga-cg908b179b
@@ -36,6 +46,7 @@ async def register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db
     Creates a new user account with the provided information and returns
     an access token for immediate authentication.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -93,11 +104,16 @@ def login_user(
     
     # Check if user already exists
     existing_user = await user_repo.get_user_by_email(user_data.email)
+=======
+    repo = UserRepository(db)
+    existing_user = await repo.get_user_by_email(user_data.email)
+>>>>>>> cga-cg908b179b
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
+<<<<<<< HEAD
     
     # Check if username already exists
     existing_username = await user_repo.get_user_by_username(user_data.username)
@@ -116,11 +132,18 @@ def login_user(
     # Convert to response model
     user_response = convert_user_db_to_response(user_db)
     
+=======
+
+    password_hash = pwd_context.hash(user_data.password)
+    user = await repo.create_user(user_data, password_hash=password_hash)
+
+>>>>>>> cga-cg908b179b
     # Create access token
     access_token = JWTAuth.create_access_token(
         data={"sub": user_db.user_id, "email": user_db.email}
     )
-    
+    user_response = convert_user_db_to_response(user)
+
     return TokenData(
         access_token=access_token,
         token_type="bearer",
@@ -131,12 +154,16 @@ def login_user(
 # PUBLIC_INTERFACE
 @router.post("/login", response_model=TokenData, summary="User login")
 async def login_user(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
+<<<<<<< HEAD
+>>>>>>> cga-cg908b179b
+=======
 >>>>>>> cga-cg908b179b
     """
     Authenticate user and return access token
 
     Validates user credentials and returns a JWT token for API access.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -201,26 +228,42 @@ def get_current_user_profile(
     # Get user by email
     user_db = await user_repo.get_user_by_email(login_data.email)
     if not user_db:
+=======
+    repo = UserRepository(db)
+    user = await repo.get_user_by_email(login_data.email)
+    if not user:
+>>>>>>> cga-cg908b179b
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
+<<<<<<< HEAD
     
     # Verify password
     if not bcrypt.checkpw(login_data.password.encode('utf-8'), user_db.password_hash.encode('utf-8')):
+=======
+
+    # Password validation
+    if not pwd_context.verify(login_data.password, user.password_hash):
+>>>>>>> cga-cg908b179b
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
+<<<<<<< HEAD
     
     # Convert to response model
     user_response = convert_user_db_to_response(user_db)
     
     # Create access token
+=======
+
+>>>>>>> cga-cg908b179b
     access_token = JWTAuth.create_access_token(
         data={"sub": user_db.user_id, "email": user_db.email}
     )
-    
+    user_response = convert_user_db_to_response(user)
+
     return TokenData(
         access_token=access_token,
         token_type="bearer", 
@@ -233,6 +276,9 @@ def get_current_user_profile(
 async def get_current_user_profile(
     current_user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
+<<<<<<< HEAD
+>>>>>>> cga-cg908b179b
+=======
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -240,6 +286,7 @@ async def get_current_user_profile(
 
     Returns the profile information for the currently authenticated user.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     return current_user
 
@@ -263,10 +310,28 @@ def update_current_user_profile(
 
 # PUBLIC_INTERFACE
 @router.put("/me", response_model=UserResponse, summary="Update current user")
+=======
+    repo = UserRepository(db)
+    user = await repo.get_user_by_id(current_user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user_response = convert_user_db_to_response(user)
+    return user_response
+
+# PUBLIC_INTERFACE
+@router.put("/me", response_model=UserResponse, summary="Update current user")
+>>>>>>> cga-cg908b179b
 async def update_current_user_profile(
     user_update: UserUpdate,
     current_user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
+<<<<<<< HEAD
+>>>>>>> cga-cg908b179b
+=======
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -274,6 +339,7 @@ async def update_current_user_profile(
 
     Updates the profile information for the currently authenticated user.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -316,10 +382,38 @@ def refresh_access_token(
     # Update user 
     updated_user = await user_repo.update_user(current_user_id, user_update)
     if not updated_user:
+=======
+    repo = UserRepository(db)
+    user = await repo.update_user(current_user_id, user_update)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+    user_response = convert_user_db_to_response(user)
+    return user_response
+
+# PUBLIC_INTERFACE
+@router.post("/refresh", response_model=TokenData, summary="Refresh access token")
+async def refresh_access_token(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Refresh the access token
+
+    Issues a new access token for the authenticated user.
+    """
+    repo = UserRepository(db)
+    user = await repo.get_user_by_id(current_user["sub"])
+    if not user:
+>>>>>>> cga-cg908b179b
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+<<<<<<< HEAD
     
     return convert_user_db_to_response(updated_user)
 
@@ -362,10 +456,14 @@ async def refresh_access_token(
     user_response = convert_user_db_to_response(user_db)
     
     # Create new access token
+=======
+
+>>>>>>> cga-cg908b179b
     access_token = JWTAuth.create_access_token(
         data={"sub": user_db.user_id, "email": user_db.email}
     )
-    
+    user_response = convert_user_db_to_response(user)
+
     return TokenData(
         access_token=access_token,
         token_type="bearer",

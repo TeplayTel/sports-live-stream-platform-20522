@@ -1,8 +1,10 @@
 from typing import Optional, List
 from sqlalchemy import String, DateTime, Boolean, Integer, Text, JSON, ForeignKey, Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from datetime import datetime
+import uuid as uuid_pkg
 import enum
 
 from .connection import Base
@@ -45,7 +47,7 @@ class EmojiTypeEnum(enum.Enum):
 class UserDB(Base):
     __tablename__ = "users"
     
-    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -63,7 +65,7 @@ class UserDB(Base):
 class TeamDB(Base):
     __tablename__ = "teams"
     
-    team_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    team_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     short_name: Mapped[str] = mapped_column(String(10), nullable=False)
     logo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -78,7 +80,7 @@ class TeamDB(Base):
 class EventDB(Base):
     __tablename__ = "events"
     
-    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sport_type: Mapped[SportTypeEnum] = mapped_column(SQLEnum(SportTypeEnum), nullable=False)
@@ -98,10 +100,10 @@ class EventDB(Base):
 class MatchDB(Base):
     __tablename__ = "matches"
     
-    match_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.event_id"), nullable=False)
-    home_team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.team_id"), nullable=False)
-    away_team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.team_id"), nullable=False)
+    match_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
+    event_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("events.event_id"), nullable=False)
+    home_team_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("teams.team_id"), nullable=False)
+    away_team_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("teams.team_id"), nullable=False)
     sport_type: Mapped[SportTypeEnum] = mapped_column(SQLEnum(SportTypeEnum), nullable=False)
     status: Mapped[MatchStatusEnum] = mapped_column(SQLEnum(MatchStatusEnum), default=MatchStatusEnum.SCHEDULED)
     home_score: Mapped[int] = mapped_column(Integer, default=0)
@@ -127,11 +129,11 @@ class MatchDB(Base):
 class MatchEventDB(Base):
     __tablename__ = "match_events"
     
-    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    match_id: Mapped[str] = mapped_column(String(36), ForeignKey("matches.match_id"), nullable=False)
+    event_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
+    match_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("matches.match_id"), nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     minute: Mapped[int] = mapped_column(Integer, nullable=False)
-    team_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    team_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     player_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -142,7 +144,7 @@ class MatchEventDB(Base):
 class EmojiAssetDB(Base):
     __tablename__ = "emoji_assets"
     
-    emoji_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    emoji_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
     emoji_type: Mapped[EmojiTypeEnum] = mapped_column(SQLEnum(EmojiTypeEnum), nullable=False)
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -157,10 +159,10 @@ class EmojiAssetDB(Base):
 class UserEmojiReactionDB(Base):
     __tablename__ = "user_emoji_reactions"
     
-    reaction_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
-    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    emoji_id: Mapped[str] = mapped_column(String(36), ForeignKey("emoji_assets.emoji_id"), nullable=False)
+    reaction_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
+    user_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    event_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    emoji_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("emoji_assets.emoji_id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -170,8 +172,8 @@ class UserEmojiReactionDB(Base):
 class HighlightDB(Base):
     __tablename__ = "highlights"
     
-    highlight_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    match_id: Mapped[str] = mapped_column(String(36), ForeignKey("matches.match_id"), nullable=False)
+    highlight_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
+    match_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("matches.match_id"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     video_url: Mapped[str] = mapped_column(Text, nullable=False)

@@ -11,9 +11,13 @@ import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.sql import func
+from sqlalchemy.sql import text
 from contextlib import asynccontextmanager
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +25,21 @@ class Base(DeclarativeBase):
     """Base class for all database models"""
     pass
 
+<<<<<<< HEAD
 # Database configuration - Use environment variables with PostgreSQL naming convention
 POSTGRES_URL = os.getenv("POSTGRES_URL")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "sports_telecast")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+=======
+# Database configuration using POSTGRES_* environment variables
+DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+DB_NAME = os.getenv("POSTGRES_DB", "sports_telecast")
+DB_USER = os.getenv("POSTGRES_USER", "postgres")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
+>>>>>>> cga-cg908b179b
 
 # Create async database URL
 if POSTGRES_URL:
@@ -182,12 +195,21 @@ async def init_database():
     """
     try:
         async with engine.begin() as conn:
-            # Import all models to ensure they're registered
-            from .models import UserDB  # noqa: F401 - Import needed for SQLAlchemy model registration
+            # Import all models to ensure they're registered with SQLAlchemy
+            from .models import (  # noqa: F401 - Import needed for SQLAlchemy model registration
+                UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
+                EmojiAssetDB, UserEmojiReactionDB, HighlightDB
+            )
             
             logger.info("Creating database tables...")
             await conn.run_sync(Base.metadata.create_all)
             logger.info("Database tables created successfully")
+            
+            # Log table creation confirmation
+            logger.info("All database models registered and tables initialized:")
+            logger.info("- users, teams, events, matches, match_events")
+            logger.info("- emoji_assets, user_emoji_reactions, highlights")
+            
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -202,7 +224,11 @@ async def check_database_connection() -> bool:
     """
     try:
         async with engine.begin() as conn:
+<<<<<<< HEAD
             await conn.execute(func.select(func.literal(1)))
+=======
+            await conn.execute(text("SELECT 1"))
+>>>>>>> cga-cg908b179b
         logger.info("Database connection check successful")
         return True
     except Exception as e:
@@ -233,8 +259,13 @@ async def get_database_health() -> dict:
     """
     try:
         async with engine.begin() as conn:
+<<<<<<< HEAD
             result = await conn.execute(func.select(func.literal(1)))
             await result.fetchone()
+=======
+            result = await conn.execute(text("SELECT 1"))
+            result.fetchone()  # Remove await here since fetchone() is not async
+>>>>>>> cga-cg908b179b
         
         return {
             "status": "healthy",

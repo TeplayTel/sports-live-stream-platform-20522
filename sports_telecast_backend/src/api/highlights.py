@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+<<<<<<< HEAD
 from sqlalchemy.orm import Session
 
 from ..models.match import Highlight, HighlightListResponse
@@ -15,6 +16,15 @@ from ..database.connection import get_db
 from ..database.repositories import HighlightRepository
 from ..database.schemas import convert_highlight_db_to_pydantic
 >>>>>>> cga-cg908b179b
+=======
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.match import Highlight, HighlightListResponse
+from auth.jwt_auth import optional_auth
+from database import get_db
+from database.repositories import HighlightRepository
+from database.schemas import convert_highlight_db_to_pydantic
+>>>>>>> cga-cg908b179b
 
 router = APIRouter(prefix="/highlights", tags=["Highlights"])
 
@@ -25,11 +35,16 @@ async def get_highlights(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     match_id: Optional[str] = Query(None, description="Filter by match ID"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -76,18 +91,34 @@ async def get_highlights(
 =======
     highlight_repo = HighlightRepository(db)
     offset = (page - 1) * page_size
+    highlight_repo = HighlightRepository(db_session)
     
+<<<<<<< HEAD
     highlights_db = await highlight_repo.get_highlights(
         limit=page_size,
         offset=offset,
+=======
+    # Get highlights with pagination
+    highlights_db = await highlight_repo.get_highlights(
+        limit=page_size, 
+        offset=offset, 
+>>>>>>> cga-cg908b179b
         match_id=match_id
     )
     
     # Convert to Pydantic models
+<<<<<<< HEAD
     highlights = [convert_highlight_db_to_pydantic(highlight_db) for highlight_db in highlights_db]
     
     # For total count, this is a simplified approach
     total = len(highlights) if len(highlights) < page_size else page_size * page + 1
+=======
+    highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in highlights_db]
+    
+    # Get total count for pagination
+    all_highlights_db = await highlight_repo.get_highlights(limit=1000, offset=0, match_id=match_id)
+    total = len(all_highlights_db)
+>>>>>>> cga-cg908b179b
     
     return HighlightListResponse(
         highlights=highlights,
@@ -102,11 +133,16 @@ async def get_highlights(
 async def get_highlight_details(
     highlight_id: str,
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -114,6 +150,7 @@ async def get_highlight_details(
 
     Returns comprehensive highlight data including video URL, description, and metadata.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -146,17 +183,27 @@ async def get_highlight_details(
     highlight_repo = HighlightRepository(db)
     highlight_db = await highlight_repo.get_highlight_by_id(highlight_id)
     
+=======
+    highlight_repo = HighlightRepository(db_session)
+    highlight_db = await highlight_repo.get_highlight_by_id(highlight_id)
+>>>>>>> cga-cg908b179b
     if not highlight_db:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Highlight not found"
         )
     
+<<<<<<< HEAD
     # Increment view count (in a real app, you might want to track unique views)
     highlight_db.view_count += 1
     await db.commit()
     
     return convert_highlight_db_to_pydantic(highlight_db)
+>>>>>>> cga-cg908b179b
+=======
+    # Convert to Pydantic model
+    highlight = convert_highlight_db_to_pydantic(highlight_db)
+    return highlight
 >>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
@@ -164,11 +211,16 @@ async def get_highlight_details(
 async def get_featured_highlights(
     limit: int = Query(10, ge=1, le=50, description="Number of highlights to return"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -177,6 +229,7 @@ async def get_featured_highlights(
     Returns the most recent and popular highlights across all matches.
     Perfect for homepage or featured content sections.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -213,6 +266,15 @@ async def get_featured_highlights(
     
     # Convert to Pydantic models
     featured_highlights = [convert_highlight_db_to_pydantic(highlight_db) for highlight_db in featured_highlights_db]
+=======
+    highlight_repo = HighlightRepository(db_session)
+    
+    # Get featured highlights using repository method
+    featured_highlights_db = await highlight_repo.get_featured_highlights(limit=limit)
+    
+    # Convert to Pydantic models
+    featured_highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in featured_highlights_db]
+>>>>>>> cga-cg908b179b
     
     return HighlightListResponse(
         highlights=featured_highlights,

@@ -10,6 +10,7 @@ from .matches import router as matches_router
 from .emoji import router as emoji_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
+<<<<<<< HEAD
 from .teams import router as teams_router
 from .categories import router as categories_router
 from .chat import router as chat_router
@@ -17,6 +18,9 @@ from .chat import router as chat_router
 # Import database initialization
 from ..database.session import init_database
 from ..database.seed import seed_database
+=======
+from .api_logs import router as api_logs_router
+>>>>>>> cga-cg908b179b
 
 # Import database components
 from ..database import (
@@ -25,6 +29,9 @@ from ..database import (
     check_database_connection,
     get_database_health
 )
+
+# Import middleware
+from ..middleware.api_logger import APILoggingMiddleware, set_api_logger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -191,6 +198,11 @@ app = FastAPI(
     ]
 )
 
+# Add API logging middleware
+api_logger_middleware = APILoggingMiddleware(app)
+set_api_logger(api_logger_middleware)
+app.add_middleware(APILoggingMiddleware)
+
 # CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
@@ -251,8 +263,18 @@ async def health_check():
             "categories": "/categories/*",
             "chat": "/chat/*",
             "websocket": "/ws/{event_id}",
+            "api_logs": "/api-logs/*",
             "api_docs": "/docs",
+            "redoc_docs": "/redoc", 
             "openapi_spec": "/openapi.json"
+        },
+        "documentation": {
+            "swagger_ui": "/docs",
+            "redoc": "/redoc",
+            "openapi_json": "/openapi.json",
+            "api_monitoring": "/api-logs/calls",
+            "api_statistics": "/api-logs/stats",
+            "available_endpoints": "/api-logs/endpoints"
         }
     }
 
@@ -276,9 +298,51 @@ app.include_router(matches_router)
 app.include_router(emoji_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
+<<<<<<< HEAD
 app.include_router(teams_router)
 app.include_router(categories_router)
 app.include_router(chat_router)
+=======
+app.include_router(api_logs_router)
+
+# API documentation tags
+tags_metadata = [
+    {
+        "name": "Health",
+        "description": "Health check and API status endpoints"
+    },
+    {
+        "name": "Authentication", 
+        "description": "User authentication, registration, and JWT token management"
+    },
+    {
+        "name": "Matches",
+        "description": "Live matches, scores, events, and schedules"
+    },
+    {
+        "name": "Events", 
+        "description": "Sports events, tournaments, and competitions"
+    },
+    {
+        "name": "Fan Engagement - Emojis",
+        "description": "Interactive emoji reactions for live events with real-time updates"
+    },
+    {
+        "name": "Highlights",
+        "description": "Match highlights, video content, and key moments"
+    },
+    {
+        "name": "WebSocket",
+        "description": "Real-time WebSocket connections for live updates and emoji reactions"
+    },
+    {
+        "name": "API Logs",
+        "description": "API call logging, monitoring, and statistics for debugging and visibility"
+    }
+]
+
+app.openapi_tags = tags_metadata
+>>>>>>> cga-cg908b179b
 
 if __name__ == "__main__":
     import uvicorn

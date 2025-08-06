@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+<<<<<<< HEAD
 from sqlalchemy.orm import Session
+=======
+from sqlalchemy.ext.asyncio import AsyncSession
+>>>>>>> cga-cg908b179b
 
 from ..models.match import (
     Match, Event, MatchListResponse, EventListResponse, 
@@ -14,12 +18,18 @@ from ..database.session import get_db
 from ..database.service import DatabaseService
 =======
 from ..auth.jwt_auth import optional_auth
+<<<<<<< HEAD
 from ..database.connection import get_db
 from ..database.repositories import MatchRepository, EventRepository, HighlightRepository
 from ..database.schemas import (
     convert_match_db_to_pydantic, convert_event_db_to_pydantic, 
     convert_highlight_db_to_pydantic
 )
+>>>>>>> cga-cg908b179b
+=======
+from ..database import get_db
+from ..database.repositories import MatchRepository, EventRepository, HighlightRepository
+from ..database.schemas import convert_match_db_to_pydantic, convert_event_db_to_pydantic, convert_highlight_db_to_pydantic
 >>>>>>> cga-cg908b179b
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
@@ -90,11 +100,16 @@ async def get_matches(
     status: Optional[MatchStatus] = Query(None, description="Filter by match status"),
     sport: Optional[SportType] = Query(None, description="Filter by sport type"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -141,6 +156,7 @@ def get_live_matches(
 =======
     match_repo = MatchRepository(db)
     offset = (page - 1) * page_size
+<<<<<<< HEAD
     
     matches_db = await match_repo.get_matches(
         limit=page_size,
@@ -155,6 +171,13 @@ def get_live_matches(
     # Get total count for pagination (this is a simplified approach)
     # In production, you might want a separate count query
     total = len(matches) if len(matches) < page_size else page_size * page + 1
+=======
+    match_repo = MatchRepository(db_session)
+    matches_db = await match_repo.get_matches(limit=page_size, offset=offset, status=status, sport=sport)
+    
+    # Convert to Pydantic models
+    matches = [convert_match_db_to_pydantic(match) for match in matches_db]
+>>>>>>> cga-cg908b179b
     
     return MatchListResponse(
         matches=matches,
@@ -167,7 +190,11 @@ def get_live_matches(
 @router.get("/live", response_model=MatchListResponse, summary="Get live matches")  
 async def get_live_matches(
     user_id: Optional[str] = Depends(optional_auth),
+<<<<<<< HEAD
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -175,6 +202,7 @@ async def get_live_matches(
     
     Returns all matches that are currently in progress.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -204,6 +232,13 @@ async def get_live_matches(
     
     # Convert to Pydantic models
     live_matches = [convert_match_db_to_pydantic(match_db) for match_db in live_matches_db]
+=======
+    match_repo = MatchRepository(db_session)
+    live_matches_db = await match_repo.get_live_matches()
+    
+    # Convert to Pydantic models
+    live_matches = [convert_match_db_to_pydantic(match) for match in live_matches_db]
+>>>>>>> cga-cg908b179b
     
     return MatchListResponse(
         matches=live_matches,
@@ -218,11 +253,16 @@ async def get_live_matches(
 async def get_match_details(
     match_id: str,
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -230,6 +270,7 @@ async def get_match_details(
     
     Returns comprehensive match data including teams, score, events, and statistics.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -250,6 +291,10 @@ async def get_match_details(
     match_repo = MatchRepository(db)
     match_db = await match_repo.get_match_by_id(match_id)
     
+=======
+    match_repo = MatchRepository(db_session)
+    match_db = await match_repo.get_match_by_id(match_id)
+>>>>>>> cga-cg908b179b
     if not match_db:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -257,6 +302,9 @@ async def get_match_details(
         )
     
     return convert_match_db_to_pydantic(match_db)
+<<<<<<< HEAD
+>>>>>>> cga-cg908b179b
+=======
 >>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
@@ -266,11 +314,16 @@ async def get_match_highlights(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=50, description="Page size"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -278,6 +331,7 @@ async def get_match_highlights(
     
     Returns video highlights and key moments from the match.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -326,6 +380,9 @@ async def get_match_highlights(
 =======
     # First verify match exists
     match_repo = MatchRepository(db)
+=======
+    match_repo = MatchRepository(db_session)
+>>>>>>> cga-cg908b179b
     match_db = await match_repo.get_match_by_id(match_id)
     if not match_db:
         raise HTTPException(
@@ -333,6 +390,7 @@ async def get_match_highlights(
             detail="Match not found"
         )
     
+<<<<<<< HEAD
     # Get highlights for the match
     highlight_repo = HighlightRepository(db)
     offset = (page - 1) * page_size
@@ -348,6 +406,18 @@ async def get_match_highlights(
     return HighlightListResponse(
         highlights=highlights,
         total=len(highlights) if len(highlights) < page_size else page_size * page + 1,
+=======
+    highlight_repo = HighlightRepository(db_session)
+    offset = (page - 1) * page_size
+    highlights_db = await highlight_repo.get_highlights(limit=page_size, offset=offset, match_id=match_id)
+    
+    # Convert to Pydantic models
+    highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in highlights_db]
+    
+    return HighlightListResponse(
+        highlights=highlights,
+        total=len(highlights),
+>>>>>>> cga-cg908b179b
         page=page,
         page_size=page_size
     )
@@ -360,11 +430,16 @@ async def get_upcoming_matches(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -372,6 +447,7 @@ async def get_upcoming_matches(
     
     Returns matches scheduled within the specified number of days.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -416,6 +492,18 @@ async def get_upcoming_matches(
     return MatchListResponse(
         matches=upcoming_matches,
         total=len(upcoming_matches) if len(upcoming_matches) < page_size else page_size * page + 1,
+=======
+    offset = (page - 1) * page_size
+    match_repo = MatchRepository(db_session)
+    upcoming_matches_db = await match_repo.get_upcoming_matches(days=days, limit=page_size, offset=offset)
+    
+    # Convert to Pydantic models
+    upcoming_matches = [convert_match_db_to_pydantic(match) for match in upcoming_matches_db]
+    
+    return MatchListResponse(
+        matches=upcoming_matches,
+        total=len(upcoming_matches),
+>>>>>>> cga-cg908b179b
         page=page,
         page_size=page_size
     )
@@ -432,11 +520,16 @@ async def get_events(
     sport: Optional[SportType] = Query(None, description="Filter by sport type"),
     featured: Optional[bool] = Query(None, description="Filter featured events"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -487,6 +580,7 @@ async def get_events(
 =======
     event_repo = EventRepository(db)
     offset = (page - 1) * page_size
+<<<<<<< HEAD
     
     events_db = await event_repo.get_events(
         limit=page_size,
@@ -497,6 +591,13 @@ async def get_events(
     
     # Convert to Pydantic models
     events = [convert_event_db_to_pydantic(event_db) for event_db in events_db]
+=======
+    event_repo = EventRepository(db_session)
+    events_db = await event_repo.get_events(limit=page_size, offset=offset, sport=sport, featured=featured)
+    
+    # Convert to Pydantic models
+    events = [convert_event_db_to_pydantic(event) for event in events_db]
+>>>>>>> cga-cg908b179b
     
     return EventListResponse(
         events=events,
@@ -511,11 +612,16 @@ async def get_events(
 async def get_event_details(
     event_id: str,
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -523,6 +629,7 @@ async def get_event_details(
     
     Returns comprehensive event data including matches and tournament information.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -571,13 +678,21 @@ async def get_event_details(
     event_repo = EventRepository(db)
     event_db = await event_repo.get_event_by_id(event_id)
     
+=======
+    event_repo = EventRepository(db_session)
+    event_db = await event_repo.get_event_by_id(event_id)
+>>>>>>> cga-cg908b179b
     if not event_db:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found"
         )
     
+<<<<<<< HEAD
     return convert_event_db_to_pydantic(event_db, include_matches=True)
+>>>>>>> cga-cg908b179b
+=======
+    return convert_event_db_to_pydantic(event_db)
 >>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
@@ -588,11 +703,16 @@ async def get_event_matches(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     status: Optional[MatchStatus] = Query(None, description="Filter by match status"),
 <<<<<<< HEAD
+<<<<<<< HEAD
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 =======
     user_id: Optional[str] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
+>>>>>>> cga-cg908b179b
+=======
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
 >>>>>>> cga-cg908b179b
 ):
     """
@@ -600,6 +720,7 @@ async def get_event_matches(
     
     Returns all matches that belong to the specified event/tournament.
     """
+<<<<<<< HEAD
 <<<<<<< HEAD
     try:
         db_service = DatabaseService(db)
@@ -641,6 +762,9 @@ async def get_event_matches(
 =======
     # First verify event exists
     event_repo = EventRepository(db)
+=======
+    event_repo = EventRepository(db_session)
+>>>>>>> cga-cg908b179b
     event_db = await event_repo.get_event_by_id(event_id)
     if not event_db:
         raise HTTPException(
@@ -648,6 +772,7 @@ async def get_event_matches(
             detail="Event not found"
         )
     
+<<<<<<< HEAD
     # Get matches for this event
     match_repo = MatchRepository(db)
     offset = (page - 1) * page_size
@@ -669,6 +794,22 @@ async def get_event_matches(
     return MatchListResponse(
         matches=matches,
         total=total,
+=======
+    # Get all matches for this event
+    offset = (page - 1) * page_size
+    match_repo = MatchRepository(db_session)
+    event_matches_db = await match_repo.get_matches(limit=page_size, offset=offset, status=status)
+    
+    # Filter for this event (this could be optimized with a specific repository method)
+    event_matches_db = [m for m in event_matches_db if m.event_id == event_id]
+    
+    # Convert to Pydantic models
+    event_matches = [convert_match_db_to_pydantic(match) for match in event_matches_db]
+    
+    return MatchListResponse(
+        matches=event_matches,
+        total=len(event_matches),
+>>>>>>> cga-cg908b179b
         page=page,
         page_size=page_size
     )

@@ -17,8 +17,8 @@ from .models import (
     EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
     SportTypeEnum, MatchStatusEnum, UserRoleEnum
 )
-from ..models.user import UserCreate, UserUpdate
-from ..models.match import SportType, MatchStatus
+from models.user import UserCreate, UserUpdate
+from models.match import SportType, MatchStatus
 
 class BaseRepository:
     """Base repository with common database operations"""

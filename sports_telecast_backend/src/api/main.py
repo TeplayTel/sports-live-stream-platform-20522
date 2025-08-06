@@ -10,6 +10,7 @@ from .matches import router as matches_router
 from .emoji import router as emoji_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
+from .api_logs import router as api_logs_router
 
 # Import database components
 from ..database import (
@@ -18,6 +19,9 @@ from ..database import (
     check_database_connection,
     get_database_health
 )
+
+# Import middleware
+from ..middleware.api_logger import APILoggingMiddleware, set_api_logger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -113,6 +117,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add API logging middleware
+api_logger_middleware = APILoggingMiddleware(app)
+set_api_logger(api_logger_middleware)
+app.add_middleware(APILoggingMiddleware)
+
 # CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
@@ -167,8 +176,18 @@ async def health_check():
             "emoji_reactions": "/fan-engagement/emoji/v1/*",
             "highlights": "/highlights/*",
             "websocket": "/ws/{event_id}",
+            "api_logs": "/api-logs/*",
             "api_docs": "/docs",
+            "redoc_docs": "/redoc", 
             "openapi_spec": "/openapi.json"
+        },
+        "documentation": {
+            "swagger_ui": "/docs",
+            "redoc": "/redoc",
+            "openapi_json": "/openapi.json",
+            "api_monitoring": "/api-logs/calls",
+            "api_statistics": "/api-logs/stats",
+            "available_endpoints": "/api-logs/endpoints"
         }
     }
 
@@ -192,6 +211,7 @@ app.include_router(matches_router)
 app.include_router(emoji_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
+app.include_router(api_logs_router)
 
 # API documentation tags
 tags_metadata = [
@@ -222,6 +242,10 @@ tags_metadata = [
     {
         "name": "WebSocket",
         "description": "Real-time WebSocket connections for live updates and emoji reactions"
+    },
+    {
+        "name": "API Logs",
+        "description": "API call logging, monitoring, and statistics for debugging and visibility"
     }
 ]
 

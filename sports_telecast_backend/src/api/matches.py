@@ -2,14 +2,14 @@ from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.match import (
+from ..models.match import (
     Match, Event, MatchListResponse, EventListResponse, 
     HighlightListResponse, MatchStatus, SportType
 )
-from auth.jwt_auth import optional_auth
-from database import get_db
-from database.repositories import MatchRepository, EventRepository, HighlightRepository
-from database.schemas import convert_match_db_to_pydantic, convert_event_db_to_pydantic, convert_highlight_db_to_pydantic
+from ..auth.jwt_auth import optional_auth
+from ..database import get_db
+from ..database.repositories import MatchRepository, EventRepository, HighlightRepository
+from ..database.schemas import convert_match_db_to_pydantic, convert_event_db_to_pydantic, convert_highlight_db_to_pydantic
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
 

@@ -2,11 +2,11 @@ from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.match import Highlight, HighlightListResponse
-from auth.jwt_auth import optional_auth
-from database import get_db
-from database.repositories import HighlightRepository
-from database.schemas import convert_highlight_db_to_pydantic
+from ..models.match import Highlight, HighlightListResponse
+from ..auth.jwt_auth import optional_auth
+from ..database import get_db
+from ..database.repositories import HighlightRepository
+from ..database.schemas import convert_highlight_db_to_pydantic
 
 router = APIRouter(prefix="/highlights", tags=["Highlights"])
 

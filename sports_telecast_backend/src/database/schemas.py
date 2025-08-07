@@ -6,12 +6,12 @@ ensuring proper data transformation and relationship handling.
 """
 
 
-from models.user import UserResponse, UserPreferences, UserRole
-from models.match import (
+from ..models.user import UserResponse, UserPreferences, UserRole
+from ..models.match import (
     Match, Event, Team, Score, MatchEvent, Highlight,
     SportType, MatchStatus
 )
-from models.emoji import EmojiAsset, UserEmojiReaction, EmojiType
+from ..models.emoji import EmojiAsset, UserEmojiReaction, EmojiType
 from .models import (
     UserDB, EventDB, MatchDB, TeamDB, MatchEventDB, HighlightDB,
     EmojiAssetDB, UserEmojiReactionDB,

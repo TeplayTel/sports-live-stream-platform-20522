@@ -390,6 +390,109 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict):
             "venue": "St. James' Park",
             "competition": "Premier League",
             "round": "Matchday 14"
+        },
+        # Additional matches for "more matches" feature
+        {
+            "match_id": "MATCH007",
+            "event_id": "EVT123",
+            "home_team_id": "TEAM004",
+            "away_team_id": "TEAM005",
+            "sport_type": SportTypeEnum.FOOTBALL,
+            "status": MatchStatusEnum.LIVE,
+            "home_score": 1,
+            "away_score": 1,
+            "start_time": datetime.utcnow() - timedelta(minutes=73),
+            "venue": "Anfield",
+            "competition": "Premier League",
+            "round": "Matchday 15",
+            "stream_url": "https://stream.example.com/match007",
+            "statistics": {
+                "possession": {"home": 42, "away": 58},
+                "shots": {"home": 8, "away": 12},
+                "corners": {"home": 3, "away": 7}
+            }
+        },
+        {
+            "match_id": "MATCH008",
+            "event_id": "EVT125",
+            "home_team_id": "TEAM001",
+            "away_team_id": "TEAM006",
+            "sport_type": SportTypeEnum.FOOTBALL,
+            "status": MatchStatusEnum.FINISHED,
+            "home_score": 3,
+            "away_score": 0,
+            "start_time": datetime.utcnow() - timedelta(days=5),
+            "end_time": datetime.utcnow() - timedelta(days=5, hours=-2),
+            "venue": "Emirates Stadium",
+            "competition": "FA Cup",
+            "round": "4th Round",
+            "statistics": {
+                "possession": {"home": 70, "away": 30},
+                "shots": {"home": 18, "away": 4},
+                "corners": {"home": 9, "away": 2}
+            }
+        },
+        {
+            "match_id": "MATCH009",
+            "event_id": "EVT123",
+            "home_team_id": "TEAM002",
+            "away_team_id": "TEAM007",
+            "sport_type": SportTypeEnum.FOOTBALL,
+            "status": MatchStatusEnum.SCHEDULED,
+            "home_score": 0,
+            "away_score": 0,
+            "start_time": datetime.utcnow() + timedelta(hours=6),
+            "venue": "Stamford Bridge",
+            "competition": "Premier League",
+            "round": "Matchday 16"
+        },
+        {
+            "match_id": "MATCH010",
+            "event_id": "EVT124",
+            "home_team_id": "TEAM003",
+            "away_team_id": "TEAM001",
+            "sport_type": SportTypeEnum.FOOTBALL,
+            "status": MatchStatusEnum.SCHEDULED,
+            "home_score": 0,
+            "away_score": 0,
+            "start_time": datetime.utcnow() + timedelta(days=3),
+            "venue": "Old Trafford",
+            "competition": "Champions League",
+            "round": "Round of 16"
+        },
+        {
+            "match_id": "MATCH011",
+            "event_id": "EVT123",
+            "home_team_id": "TEAM008",
+            "away_team_id": "TEAM003",
+            "sport_type": SportTypeEnum.FOOTBALL,
+            "status": MatchStatusEnum.FINISHED,
+            "home_score": 1,
+            "away_score": 4,
+            "start_time": datetime.utcnow() - timedelta(days=4),
+            "end_time": datetime.utcnow() - timedelta(days=4, hours=-2),
+            "venue": "Falmer Stadium",
+            "competition": "Premier League",
+            "round": "Matchday 14",
+            "statistics": {
+                "possession": {"home": 35, "away": 65},
+                "shots": {"home": 6, "away": 16},
+                "corners": {"home": 2, "away": 8}
+            }
+        },
+        {
+            "match_id": "MATCH012",
+            "event_id": "EVT123",
+            "home_team_id": "TEAM006",
+            "away_team_id": "TEAM004",
+            "sport_type": SportTypeEnum.FOOTBALL,
+            "status": MatchStatusEnum.SCHEDULED,
+            "home_score": 0,
+            "away_score": 0,
+            "start_time": datetime.utcnow() + timedelta(days=2, hours=4),
+            "venue": "Tottenham Hotspur Stadium",
+            "competition": "Premier League",
+            "round": "Matchday 16"
         }
     ]
     

@@ -68,6 +68,44 @@ async def get_live_matches(
     )
 
 # PUBLIC_INTERFACE
+@router.get("/more", response_model=MatchListResponse, summary="Get more matches")
+async def get_more_matches(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(12, ge=1, le=50, description="Page size"),
+    exclude_ids: str = Query("", description="Comma-separated match IDs to exclude"),
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
+):
+    """
+    Get additional matches for "more matches" section
+    
+    Returns a curated list of matches excluding already shown matches.
+    Includes a mix of live, upcoming, and recently finished matches.
+    """
+    match_repo = MatchRepository(db_session)
+    
+    # Parse excluded match IDs
+    excluded_match_ids = [mid.strip() for mid in exclude_ids.split(",") if mid.strip()]
+    
+    # Get more matches with variety (live, upcoming, finished)
+    offset = (page - 1) * page_size
+    more_matches_db = await match_repo.get_more_matches(
+        limit=page_size, 
+        offset=offset, 
+        exclude_ids=excluded_match_ids
+    )
+    
+    # Convert to Pydantic models
+    more_matches = [convert_match_db_to_pydantic(match) for match in more_matches_db]
+    
+    return MatchListResponse(
+        matches=more_matches,
+        total=len(more_matches),
+        page=page,
+        page_size=page_size
+    )
+
+# PUBLIC_INTERFACE
 @router.get("/{match_id}", response_model=Match, summary="Get match details")
 async def get_match_details(
     match_id: str,

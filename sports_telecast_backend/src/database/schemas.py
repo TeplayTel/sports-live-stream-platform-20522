@@ -10,7 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from .models import (
-    UserDB, EventDB, MatchDB, TeamDB
+    UserDB, EventDB, MatchDB, TeamDB, HighlightDB
 )
 
 # Base response models
@@ -54,6 +54,16 @@ class MatchResponse(BaseResponse):
     round: Optional[str] = None
     stream_url: Optional[str] = None
     statistics: Dict[str, Any] = {}
+
+class HighlightResponse(BaseResponse):
+    match_id: str
+    title: str
+    description: Optional[str] = None
+    video_url: str
+    thumbnail_url: Optional[str] = None
+    duration: int
+    tags: Optional[List[str]] = None
+    view_count: int = 0
 
 class ScheduleResponse(BaseResponse):
     date: datetime
@@ -133,6 +143,22 @@ def convert_match_db_to_response(match_db: MatchDB) -> MatchResponse:
         statistics=match_db.statistics or {},
         created_at=match_db.created_at,
         updated_at=match_db.updated_at
+    )
+
+def convert_highlight_db_to_response(highlight_db: HighlightDB) -> HighlightResponse:
+    """Convert HighlightDB to HighlightResponse"""
+    return HighlightResponse(
+        id=str(highlight_db.highlight_id),
+        match_id=str(highlight_db.match_id),
+        title=highlight_db.title,
+        description=highlight_db.description,
+        video_url=highlight_db.video_url,
+        thumbnail_url=highlight_db.thumbnail_url,
+        duration=highlight_db.duration,
+        tags=highlight_db.tags,
+        view_count=highlight_db.view_count,
+        created_at=highlight_db.created_at,
+        updated_at=highlight_db.updated_at
     )
 
 def convert_schedule_db_to_response(schedule_db: MatchDB) -> ScheduleResponse:

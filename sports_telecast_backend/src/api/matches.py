@@ -9,7 +9,7 @@ from ..models.match import (
 from ..auth.jwt_auth import optional_auth
 from ..database import get_db
 from ..database.repositories import MatchRepository, EventRepository, HighlightRepository
-from ..database.schemas import convert_match_db_to_pydantic, convert_event_db_to_pydantic, convert_highlight_db_to_pydantic
+from ..database.schemas import convert_match_db_to_response, convert_event_db_to_response, convert_highlight_db_to_response
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
 
@@ -34,7 +34,7 @@ async def get_matches(
     matches_db = await match_repo.get_matches(limit=page_size, offset=offset, status=status, sport=sport)
     
     # Convert to Pydantic models
-    matches = [convert_match_db_to_pydantic(match) for match in matches_db]
+    matches = [convert_match_db_to_response(match) for match in matches_db]
     
     return MatchListResponse(
         matches=matches,
@@ -58,7 +58,7 @@ async def get_live_matches(
     live_matches_db = await match_repo.get_live_matches()
     
     # Convert to Pydantic models
-    live_matches = [convert_match_db_to_pydantic(match) for match in live_matches_db]
+    live_matches = [convert_match_db_to_response(match) for match in live_matches_db]
     
     return MatchListResponse(
         matches=live_matches,
@@ -96,7 +96,7 @@ async def get_more_matches(
     )
     
     # Convert to Pydantic models
-    more_matches = [convert_match_db_to_pydantic(match) for match in more_matches_db]
+    more_matches = [convert_match_db_to_response(match) for match in more_matches_db]
     
     return MatchListResponse(
         matches=more_matches,
@@ -125,7 +125,7 @@ async def get_match_details(
             detail="Match not found"
         )
     
-    return convert_match_db_to_pydantic(match_db)
+    return convert_match_db_to_response(match_db)
 
 # PUBLIC_INTERFACE
 @router.get("/{match_id}/highlights", response_model=HighlightListResponse, summary="Get match highlights")
@@ -154,7 +154,7 @@ async def get_match_highlights(
     highlights_db = await highlight_repo.get_highlights(limit=page_size, offset=offset, match_id=match_id)
     
     # Convert to Pydantic models
-    highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in highlights_db]
+    highlights = [convert_highlight_db_to_response(highlight) for highlight in highlights_db]
     
     return HighlightListResponse(
         highlights=highlights,
@@ -182,7 +182,7 @@ async def get_upcoming_matches(
     upcoming_matches_db = await match_repo.get_upcoming_matches(days=days, limit=page_size, offset=offset)
     
     # Convert to Pydantic models
-    upcoming_matches = [convert_match_db_to_pydantic(match) for match in upcoming_matches_db]
+    upcoming_matches = [convert_match_db_to_response(match) for match in upcoming_matches_db]
     
     return MatchListResponse(
         matches=upcoming_matches,
@@ -214,7 +214,7 @@ async def get_events(
     events_db = await event_repo.get_events(limit=page_size, offset=offset, sport=sport, featured=featured)
     
     # Convert to Pydantic models
-    events = [convert_event_db_to_pydantic(event) for event in events_db]
+    events = [convert_event_db_to_response(event) for event in events_db]
     
     return EventListResponse(
         events=events,
@@ -243,7 +243,7 @@ async def get_event_details(
             detail="Event not found"
         )
     
-    return convert_event_db_to_pydantic(event_db)
+    return convert_event_db_to_response(event_db)
 
 # PUBLIC_INTERFACE
 @events_router.get("/{event_id}/matches", response_model=MatchListResponse, summary="Get event matches")
@@ -277,7 +277,7 @@ async def get_event_matches(
     event_matches_db = [m for m in event_matches_db if m.event_id == event_id]
     
     # Convert to Pydantic models
-    event_matches = [convert_match_db_to_pydantic(match) for match in event_matches_db]
+    event_matches = [convert_match_db_to_response(match) for match in event_matches_db]
     
     return MatchListResponse(
         matches=event_matches,

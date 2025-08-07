@@ -848,34 +848,34 @@ async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
     # Create realistic emoji reactions for various match events
     reactions_data = []
     
-    # Reactions to Arsenal vs Chelsea live match goals
+    # Generate proper UUID event IDs for match events instead of using string identifiers
     match_events = [
-        {"event": "MATCH001_GOAL_15", "popular_emojis": ["EMJ107", "EMJ104", "EMJ108"]},
-        {"event": "MATCH001_GOAL_34", "popular_emojis": ["EMJ107", "EMJ105", "EMJ103"]},
-        {"event": "MATCH001_GOAL_67", "popular_emojis": ["EMJ107", "EMJ108", "EMJ104"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ104", "EMJ108"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ105", "EMJ103"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ108", "EMJ104"]},
     ]
     
     # Reactions to finished Arsenal vs Liverpool match
     match_events.extend([
-        {"event": "MATCH003_GOAL_12", "popular_emojis": ["EMJ107", "EMJ104"]},
-        {"event": "MATCH003_GOAL_28", "popular_emojis": ["EMJ107", "EMJ103"]},
-        {"event": "MATCH003_GOAL_45", "popular_emojis": ["EMJ107", "EMJ108"]},
-        {"event": "MATCH003_GOAL_73", "popular_emojis": ["EMJ107", "EMJ109"]},
-        {"event": "MATCH003_GOAL_89", "popular_emojis": ["EMJ107", "EMJ108", "EMJ104"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ104"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ103"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ108"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ109"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ108", "EMJ104"]},
     ])
     
     # Reactions to Chelsea vs Man City match
     match_events.extend([
-        {"event": "MATCH005_GOAL_31", "popular_emojis": ["EMJ107", "EMJ104", "EMJ108"]},
-        {"event": "MATCH005_RED_CARD_78", "popular_emojis": ["EMJ109", "EMJ110"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ104", "EMJ108"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ109", "EMJ110"]},
     ])
     
     # Reactions to Newcastle vs Brighton match
     match_events.extend([
-        {"event": "MATCH006_GOAL_22", "popular_emojis": ["EMJ107", "EMJ103"]},
-        {"event": "MATCH006_GOAL_38", "popular_emojis": ["EMJ107", "EMJ105"]},
-        {"event": "MATCH006_GOAL_55", "popular_emojis": ["EMJ107", "EMJ104"]},
-        {"event": "MATCH006_GOAL_82", "popular_emojis": ["EMJ107", "EMJ109", "EMJ108"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ103"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ105"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ104"]},
+        {"event": str(uuid.uuid4()), "popular_emojis": ["EMJ107", "EMJ109", "EMJ108"]},
     ])
     
     user_list = list(uuid_mappings['users'].keys())
@@ -895,11 +895,11 @@ async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
             }
             reactions_data.append(reaction_data)
     
-    # Add some additional random reactions to general events
+    # Add some additional random reactions to general events with proper UUIDs
     for _ in range(50):
         user_key = random.choice(user_list)
         emoji_key = random.choice(list(uuid_mappings['emojis'].keys()))
-        event_id = f"GENERAL_EVENT_{random.randint(1000, 9999)}"
+        event_id = str(uuid.uuid4())  # Use proper UUID instead of string
         
         reaction_data = {
             "reaction_id": uuid.uuid4(),

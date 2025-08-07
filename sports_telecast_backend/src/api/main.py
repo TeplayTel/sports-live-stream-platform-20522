@@ -6,7 +6,10 @@ from contextlib import asynccontextmanager
 
 # Import routers
 from .auth import router as auth_router
+from .users import router as users_router
+from .profiles import router as profiles_router
 from .matches import router as matches_router
+from .schedules import router as schedules_router
 from .emoji import router as emoji_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
@@ -255,8 +258,15 @@ async def health_check():
         ],
         "endpoints": {
             "authentication": "/auth/*",
+            "users": "/users/*",
+            "profiles": "/profiles/*",
             "matches": "/matches/*", 
+<<<<<<< HEAD
             "events": "/matches/events/*",
+=======
+            "schedules": "/schedules/*",
+            "events": "/events/*",
+>>>>>>> cga-cg908b179b
             "emoji_reactions": "/fan-engagement/emoji/v1/*",
             "highlights": "/highlights/*",
             "teams": "/teams/*",
@@ -294,7 +304,10 @@ async def database_health_check():
 
 # Include API routers
 app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(profiles_router)
 app.include_router(matches_router)
+app.include_router(schedules_router)
 app.include_router(emoji_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
@@ -316,8 +329,20 @@ tags_metadata = [
         "description": "User authentication, registration, and JWT token management"
     },
     {
+        "name": "Users",
+        "description": "User management, search, and administration"
+    },
+    {
+        "name": "User Profiles",
+        "description": "Extended user profiles with preferences, sports interests, and privacy settings"
+    },
+    {
         "name": "Matches",
         "description": "Live matches, scores, events, and schedules"
+    },
+    {
+        "name": "Schedules",
+        "description": "Match schedules, daily/weekly views, and calendar management"
     },
     {
         "name": "Events", 

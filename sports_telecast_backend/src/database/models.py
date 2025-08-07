@@ -61,6 +61,7 @@ class UserDB(Base):
     
     # Relationships
     emoji_reactions: Mapped[List["UserEmojiReactionDB"]] = relationship("UserEmojiReactionDB", back_populates="user")
+    profile: Mapped[Optional["UserProfileDB"]] = relationship("UserProfileDB", back_populates="user", uselist=False)
 
 class TeamDB(Base):
     __tablename__ = "teams"
@@ -125,6 +126,7 @@ class MatchDB(Base):
     away_team: Mapped["TeamDB"] = relationship("TeamDB", foreign_keys=[away_team_id], back_populates="away_matches")
     match_events: Mapped[List["MatchEventDB"]] = relationship("MatchEventDB", back_populates="match")
     highlights: Mapped[List["HighlightDB"]] = relationship("HighlightDB", back_populates="match")
+    schedules: Mapped[List["ScheduleDB"]] = relationship("ScheduleDB", secondary="schedule_matches", back_populates="matches")
 
 class MatchEventDB(Base):
     __tablename__ = "match_events"
@@ -185,3 +187,77 @@ class HighlightDB(Base):
     
     # Relationships
     match: Mapped["MatchDB"] = relationship("MatchDB", back_populates="highlights")
+
+class ProfileVisibilityEnum(enum.Enum):
+    PUBLIC = "public"
+    FRIENDS = "friends"
+    PRIVATE = "private"
+
+class UserProfileDB(Base):
+    __tablename__ = "user_profiles"
+    
+    profile_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
+    user_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False, unique=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    website: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cover_image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Sports preferences (stored as JSON arrays)
+    favorite_teams: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    favorite_sports: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    favorite_players: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    favorite_leagues: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    
+    # Notification preferences (stored as JSON)
+    notification_preferences: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    
+    # Privacy settings
+    profile_visibility: Mapped[ProfileVisibilityEnum] = mapped_column(SQLEnum(ProfileVisibilityEnum), default=ProfileVisibilityEnum.PUBLIC)
+    show_favorite_teams: Mapped[bool] = mapped_column(Boolean, default=True)
+    show_activity: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_friend_requests: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    # Activity tracking
+    total_reactions: Mapped[int] = mapped_column(Integer, default=0)
+    matches_watched: Mapped[int] = mapped_column(Integer, default=0)
+    highlights_watched: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Localization
+    preferred_language: Mapped[str] = mapped_column(String(10), default="en")
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC")
+    date_format: Mapped[str] = mapped_column(String(20), default="MM/DD/YYYY")
+    time_format: Mapped[str] = mapped_column(String(10), default="12h")
+    
+    # Metadata
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user: Mapped["UserDB"] = relationship("UserDB", back_populates="profile")
+
+class ScheduleDB(Base):
+    __tablename__ = "schedules"
+    
+    schedule_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    total_matches: Mapped[int] = mapped_column(Integer, default=0)
+    schedule_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    matches: Mapped[List["MatchDB"]] = relationship("MatchDB", secondary="schedule_matches", back_populates="schedules")
+
+class ScheduleMatchDB(Base):
+    __tablename__ = "schedule_matches"
+    
+    schedule_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("schedules.schedule_id"), primary_key=True)
+    match_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("matches.match_id"), primary_key=True)
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

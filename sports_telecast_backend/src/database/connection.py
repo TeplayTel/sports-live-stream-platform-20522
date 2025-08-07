@@ -198,7 +198,8 @@ async def init_database():
             # Import all models to ensure they're registered with SQLAlchemy
             from .models import (  # noqa: F401 - Import needed for SQLAlchemy model registration
                 UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
-                EmojiAssetDB, UserEmojiReactionDB, HighlightDB
+                EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
+                UserProfileDB, ScheduleDB, ScheduleMatchDB
             )
             
             logger.info("Creating database tables...")
@@ -207,8 +208,9 @@ async def init_database():
             
             # Log table creation confirmation
             logger.info("All database models registered and tables initialized:")
-            logger.info("- users, teams, events, matches, match_events")
+            logger.info("- users, user_profiles, teams, events, matches, match_events")
             logger.info("- emoji_assets, user_emoji_reactions, highlights")
+            logger.info("- schedules, schedule_matches")
             
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")

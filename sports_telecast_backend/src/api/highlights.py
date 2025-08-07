@@ -19,11 +19,19 @@ from ..database.schemas import convert_highlight_db_to_pydantic
 =======
 from sqlalchemy.ext.asyncio import AsyncSession
 
+<<<<<<< HEAD
 from models.match import Highlight, HighlightListResponse
 from auth.jwt_auth import optional_auth
 from database import get_db
 from database.repositories import HighlightRepository
 from database.schemas import convert_highlight_db_to_pydantic
+>>>>>>> cga-cg908b179b
+=======
+from ..models.match import Highlight, HighlightListResponse
+from ..auth.jwt_auth import optional_auth
+from ..database import get_db
+from ..database.repositories import HighlightRepository
+from ..database.schemas import convert_highlight_db_to_response
 >>>>>>> cga-cg908b179b
 
 router = APIRouter(prefix="/highlights", tags=["Highlights"])
@@ -108,12 +116,16 @@ async def get_highlights(
     
     # Convert to Pydantic models
 <<<<<<< HEAD
+<<<<<<< HEAD
     highlights = [convert_highlight_db_to_pydantic(highlight_db) for highlight_db in highlights_db]
     
     # For total count, this is a simplified approach
     total = len(highlights) if len(highlights) < page_size else page_size * page + 1
 =======
     highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in highlights_db]
+=======
+    highlights = [convert_highlight_db_to_response(highlight) for highlight in highlights_db]
+>>>>>>> cga-cg908b179b
     
     # Get total count for pagination
     all_highlights_db = await highlight_repo.get_highlights(limit=1000, offset=0, match_id=match_id)
@@ -202,7 +214,7 @@ async def get_highlight_details(
 >>>>>>> cga-cg908b179b
 =======
     # Convert to Pydantic model
-    highlight = convert_highlight_db_to_pydantic(highlight_db)
+    highlight = convert_highlight_db_to_response(highlight_db)
     return highlight
 >>>>>>> cga-cg908b179b
 
@@ -273,7 +285,11 @@ async def get_featured_highlights(
     featured_highlights_db = await highlight_repo.get_featured_highlights(limit=limit)
     
     # Convert to Pydantic models
+<<<<<<< HEAD
     featured_highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in featured_highlights_db]
+>>>>>>> cga-cg908b179b
+=======
+    featured_highlights = [convert_highlight_db_to_response(highlight) for highlight in featured_highlights_db]
 >>>>>>> cga-cg908b179b
     
     return HighlightListResponse(

@@ -14,11 +14,12 @@ import uuid
 
 from .models import (
     UserDB, EventDB, MatchDB, 
-    EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
-    SportTypeEnum, MatchStatusEnum, UserRoleEnum
+    EmojiAssetDB, UserEmojiReactionDB, HighlightDB, UserProfileDB,
+    SportTypeEnum, MatchStatusEnum, UserRoleEnum, ProfileVisibilityEnum
 )
-from models.user import UserCreate, UserUpdate
-from models.match import SportType, MatchStatus
+from ..models.user import UserCreate, UserUpdate
+from ..models.profile import UserProfileCreate, UserProfileUpdate
+from ..models.match import SportType, MatchStatus
 
 class BaseRepository:
     """Base repository with common database operations"""
@@ -103,6 +104,76 @@ class UserRepository(BaseRepository):
         await self.session.refresh(user)
         return user
 
+class UserProfileRepository(BaseRepository):
+    """Repository for user profile operations"""
+    
+    # PUBLIC_INTERFACE
+    async def create_profile(self, profile_data: UserProfileCreate) -> UserProfileDB:
+        """
+        Create a new user profile
+        
+        Args:
+            profile_data: Profile creation data
+            
+        Returns:
+            UserProfileDB: Created profile record
+        """
+        profile = UserProfileDB(
+            profile_id=str(uuid.uuid4()),
+            user_id=profile_data.user_id,
+            display_name=profile_data.display_name,
+            bio=profile_data.bio,
+            location=profile_data.location,
+            website=str(profile_data.website) if profile_data.website else None,
+            favorite_teams=profile_data.favorite_teams,
+            favorite_sports=profile_data.favorite_sports,
+            profile_visibility=ProfileVisibilityEnum.PUBLIC,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        self.session.add(profile)
+        await self.session.commit()
+        await self.session.refresh(profile)
+        return profile
+    
+    # PUBLIC_INTERFACE
+    async def get_profile_by_user_id(self, user_id: str) -> Optional[UserProfileDB]:
+        """Get profile by user ID"""
+        result = await self.session.execute(
+            select(UserProfileDB).where(UserProfileDB.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+    
+    # PUBLIC_INTERFACE
+    async def get_profile_by_id(self, profile_id: str) -> Optional[UserProfileDB]:
+        """Get profile by profile ID"""
+        result = await self.session.execute(
+            select(UserProfileDB).where(UserProfileDB.profile_id == profile_id)
+        )
+        return result.scalar_one_or_none()
+    
+    # PUBLIC_INTERFACE
+    async def update_profile(self, profile_id: str, profile_data: UserProfileUpdate) -> Optional[UserProfileDB]:
+        """Update profile information"""
+        profile = await self.get_profile_by_id(profile_id)
+        if not profile:
+            return None
+            
+        # Update fields that are not None
+        for field_name, value in profile_data.dict(exclude_unset=True).items():
+            if value is not None:
+                if field_name in ['website', 'avatar_url', 'cover_image_url'] and value:
+                    setattr(profile, field_name, str(value))
+                else:
+                    setattr(profile, field_name, value)
+                    
+        profile.updated_at = datetime.utcnow()
+        
+        await self.session.commit()
+        await self.session.refresh(profile)
+        return profile
+
 class MatchRepository(BaseRepository):
     """Repository for match operations"""
     
@@ -184,6 +255,7 @@ class MatchRepository(BaseRepository):
         return result.scalars().all()
     
     # PUBLIC_INTERFACE
+<<<<<<< HEAD
     async def get_matches_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0, status: Optional[MatchStatus] = None) -> List[MatchDB]:
         """Get matches for a specific event"""
         query = select(MatchDB).options(
@@ -212,6 +284,79 @@ class MatchRepository(BaseRepository):
         
         result = await self.session.execute(query)
         return result.scalar() or 0
+=======
+    async def get_more_matches(self, limit: int = 12, offset: int = 0, exclude_ids: List[str] = None) -> List[MatchDB]:
+        """Get additional matches for 'more matches' section with variety"""
+        if exclude_ids is None:
+            exclude_ids = []
+        
+        # Build base query with exclusions
+        base_query = select(MatchDB).options(
+            selectinload(MatchDB.home_team),
+            selectinload(MatchDB.away_team),
+            selectinload(MatchDB.event)
+        )
+        
+        if exclude_ids:
+            base_query = base_query.where(~MatchDB.match_id.in_(exclude_ids))
+        
+        # Get a mix of different match types
+        matches = []
+        
+        # 1. Live matches (highest priority)
+        live_result = await self.session.execute(
+            base_query.where(MatchDB.status == MatchStatusEnum.LIVE)
+            .order_by(desc(MatchDB.start_time))
+            .limit(3)
+        )
+        matches.extend(live_result.scalars().all())
+        
+        # 2. Recent finished matches (within last 7 days)
+        recent_finished_result = await self.session.execute(
+            base_query.where(
+                and_(
+                    MatchDB.status == MatchStatusEnum.FINISHED,
+                    MatchDB.start_time >= datetime.utcnow() - timedelta(days=7)
+                )
+            )
+            .order_by(desc(MatchDB.start_time))
+            .limit(4)
+        )
+        matches.extend(recent_finished_result.scalars().all())
+        
+        # 3. Upcoming matches (next 7 days)
+        upcoming_result = await self.session.execute(
+            base_query.where(
+                and_(
+                    MatchDB.status == MatchStatusEnum.SCHEDULED,
+                    MatchDB.start_time >= datetime.utcnow(),
+                    MatchDB.start_time <= datetime.utcnow() + timedelta(days=7)
+                )
+            )
+            .order_by(MatchDB.start_time)
+            .limit(4)
+        )
+        matches.extend(upcoming_result.scalars().all())
+        
+        # 4. Fill remaining spots with any other matches
+        if len(matches) < limit:
+            existing_ids = [m.match_id for m in matches] + exclude_ids
+            additional_result = await self.session.execute(
+                base_query.where(~MatchDB.match_id.in_(existing_ids))
+                .order_by(desc(MatchDB.start_time))
+                .limit(limit - len(matches))
+            )
+            matches.extend(additional_result.scalars().all())
+        
+        # Remove duplicates and apply pagination
+        unique_matches = {}
+        for match in matches:
+            if match.match_id not in unique_matches:
+                unique_matches[match.match_id] = match
+        
+        final_matches = list(unique_matches.values())[offset:offset + limit]
+        return final_matches
+>>>>>>> cga-cg908b179b
 
 class EventRepository(BaseRepository):
     """Repository for event operations"""

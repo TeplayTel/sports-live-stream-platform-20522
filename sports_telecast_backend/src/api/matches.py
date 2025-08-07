@@ -29,7 +29,11 @@ from ..database.schemas import (
 =======
 from ..database import get_db
 from ..database.repositories import MatchRepository, EventRepository, HighlightRepository
+<<<<<<< HEAD
 from ..database.schemas import convert_match_db_to_pydantic, convert_event_db_to_pydantic, convert_highlight_db_to_pydantic
+>>>>>>> cga-cg908b179b
+=======
+from ..database.schemas import convert_match_db_to_response, convert_event_db_to_response, convert_highlight_db_to_response
 >>>>>>> cga-cg908b179b
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
@@ -176,7 +180,11 @@ def get_live_matches(
     matches_db = await match_repo.get_matches(limit=page_size, offset=offset, status=status, sport=sport)
     
     # Convert to Pydantic models
+<<<<<<< HEAD
     matches = [convert_match_db_to_pydantic(match) for match in matches_db]
+>>>>>>> cga-cg908b179b
+=======
+    matches = [convert_match_db_to_response(match) for match in matches_db]
 >>>>>>> cga-cg908b179b
     
     return MatchListResponse(
@@ -237,7 +245,11 @@ async def get_live_matches(
     live_matches_db = await match_repo.get_live_matches()
     
     # Convert to Pydantic models
+<<<<<<< HEAD
     live_matches = [convert_match_db_to_pydantic(match) for match in live_matches_db]
+>>>>>>> cga-cg908b179b
+=======
+    live_matches = [convert_match_db_to_response(match) for match in live_matches_db]
 >>>>>>> cga-cg908b179b
     
     return MatchListResponse(
@@ -247,6 +259,44 @@ async def get_live_matches(
         page_size=len(live_matches)
     )
 >>>>>>> cga-cg908b179b
+
+# PUBLIC_INTERFACE
+@router.get("/more", response_model=MatchListResponse, summary="Get more matches")
+async def get_more_matches(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(12, ge=1, le=50, description="Page size"),
+    exclude_ids: str = Query("", description="Comma-separated match IDs to exclude"),
+    user_id: Optional[str] = Depends(optional_auth),
+    db_session: AsyncSession = Depends(get_db)
+):
+    """
+    Get additional matches for "more matches" section
+    
+    Returns a curated list of matches excluding already shown matches.
+    Includes a mix of live, upcoming, and recently finished matches.
+    """
+    match_repo = MatchRepository(db_session)
+    
+    # Parse excluded match IDs
+    excluded_match_ids = [mid.strip() for mid in exclude_ids.split(",") if mid.strip()]
+    
+    # Get more matches with variety (live, upcoming, finished)
+    offset = (page - 1) * page_size
+    more_matches_db = await match_repo.get_more_matches(
+        limit=page_size, 
+        offset=offset, 
+        exclude_ids=excluded_match_ids
+    )
+    
+    # Convert to Pydantic models
+    more_matches = [convert_match_db_to_response(match) for match in more_matches_db]
+    
+    return MatchListResponse(
+        matches=more_matches,
+        total=len(more_matches),
+        page=page,
+        page_size=page_size
+    )
 
 # PUBLIC_INTERFACE
 @router.get("/{match_id}", response_model=Match, summary="Get match details")
@@ -301,10 +351,14 @@ async def get_match_details(
             detail="Match not found"
         )
     
+<<<<<<< HEAD
     return convert_match_db_to_pydantic(match_db)
 <<<<<<< HEAD
 >>>>>>> cga-cg908b179b
 =======
+>>>>>>> cga-cg908b179b
+=======
+    return convert_match_db_to_response(match_db)
 >>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
@@ -412,7 +466,7 @@ async def get_match_highlights(
     highlights_db = await highlight_repo.get_highlights(limit=page_size, offset=offset, match_id=match_id)
     
     # Convert to Pydantic models
-    highlights = [convert_highlight_db_to_pydantic(highlight) for highlight in highlights_db]
+    highlights = [convert_highlight_db_to_response(highlight) for highlight in highlights_db]
     
     return HighlightListResponse(
         highlights=highlights,
@@ -498,7 +552,7 @@ async def get_upcoming_matches(
     upcoming_matches_db = await match_repo.get_upcoming_matches(days=days, limit=page_size, offset=offset)
     
     # Convert to Pydantic models
-    upcoming_matches = [convert_match_db_to_pydantic(match) for match in upcoming_matches_db]
+    upcoming_matches = [convert_match_db_to_response(match) for match in upcoming_matches_db]
     
     return MatchListResponse(
         matches=upcoming_matches,
@@ -596,7 +650,11 @@ async def get_events(
     events_db = await event_repo.get_events(limit=page_size, offset=offset, sport=sport, featured=featured)
     
     # Convert to Pydantic models
+<<<<<<< HEAD
     events = [convert_event_db_to_pydantic(event) for event in events_db]
+>>>>>>> cga-cg908b179b
+=======
+    events = [convert_event_db_to_response(event) for event in events_db]
 >>>>>>> cga-cg908b179b
     
     return EventListResponse(
@@ -689,10 +747,14 @@ async def get_event_details(
         )
     
 <<<<<<< HEAD
+<<<<<<< HEAD
     return convert_event_db_to_pydantic(event_db, include_matches=True)
 >>>>>>> cga-cg908b179b
 =======
     return convert_event_db_to_pydantic(event_db)
+>>>>>>> cga-cg908b179b
+=======
+    return convert_event_db_to_response(event_db)
 >>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
@@ -804,7 +866,7 @@ async def get_event_matches(
     event_matches_db = [m for m in event_matches_db if m.event_id == event_id]
     
     # Convert to Pydantic models
-    event_matches = [convert_match_db_to_pydantic(match) for match in event_matches_db]
+    event_matches = [convert_match_db_to_response(match) for match in event_matches_db]
     
     return MatchListResponse(
         matches=event_matches,

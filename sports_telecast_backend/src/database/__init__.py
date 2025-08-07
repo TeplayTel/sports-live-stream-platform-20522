@@ -2,7 +2,7 @@
 Database package initialization
 """
 
-from .connection import Base, get_db, init_database
+from .connection import Base, get_db, init_database, close_database_connections, check_database_connection, get_database_health
 from .models import (
     UserDB,
     TeamDB,
@@ -38,6 +38,9 @@ __all__ = [
     'Base',
     'get_db',
     'init_database',
+    'close_database_connections',
+    'check_database_connection',
+    'get_database_health',
     # Models
     'UserDB',
     'TeamDB',

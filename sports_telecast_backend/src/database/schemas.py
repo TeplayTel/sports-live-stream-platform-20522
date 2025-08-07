@@ -10,7 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from .models import (
-    UserDB, EventDB, MatchDB, TeamDB, HighlightDB
+    UserDB, EventDB, MatchDB, TeamDB, HighlightDB, EmojiAssetDB
 )
 
 # Base response models
@@ -174,3 +174,16 @@ def convert_schedule_db_to_response(schedule_db: MatchDB) -> ScheduleResponse:
         created_at=schedule_db.created_at,
         updated_at=schedule_db.updated_at
     )
+
+def convert_emoji_db_to_pydantic(emoji_db: EmojiAssetDB) -> Dict[str, Any]:
+    """Convert EmojiAssetDB to pydantic response dict"""
+    return {
+        "emoji_id": str(emoji_db.emoji_id),
+        "emoji_type": emoji_db.emoji_type.value,
+        "image_url": emoji_db.image_url,
+        "name": emoji_db.name,
+        "description": emoji_db.description,
+        "is_active": emoji_db.is_active,
+        "sort_order": emoji_db.sort_order,
+        "created_at": emoji_db.created_at
+    }

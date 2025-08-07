@@ -14,10 +14,11 @@ import uuid
 
 from .models import (
     UserDB, EventDB, MatchDB, 
-    EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
-    SportTypeEnum, MatchStatusEnum, UserRoleEnum
+    EmojiAssetDB, UserEmojiReactionDB, HighlightDB, UserProfileDB,
+    SportTypeEnum, MatchStatusEnum, UserRoleEnum, ProfileVisibilityEnum
 )
 from ..models.user import UserCreate, UserUpdate
+from ..models.profile import UserProfileCreate, UserProfileUpdate
 from ..models.match import SportType, MatchStatus
 
 class BaseRepository:
@@ -102,6 +103,76 @@ class UserRepository(BaseRepository):
         await self.session.commit()
         await self.session.refresh(user)
         return user
+
+class UserProfileRepository(BaseRepository):
+    """Repository for user profile operations"""
+    
+    # PUBLIC_INTERFACE
+    async def create_profile(self, profile_data: UserProfileCreate) -> UserProfileDB:
+        """
+        Create a new user profile
+        
+        Args:
+            profile_data: Profile creation data
+            
+        Returns:
+            UserProfileDB: Created profile record
+        """
+        profile = UserProfileDB(
+            profile_id=str(uuid.uuid4()),
+            user_id=profile_data.user_id,
+            display_name=profile_data.display_name,
+            bio=profile_data.bio,
+            location=profile_data.location,
+            website=str(profile_data.website) if profile_data.website else None,
+            favorite_teams=profile_data.favorite_teams,
+            favorite_sports=profile_data.favorite_sports,
+            profile_visibility=ProfileVisibilityEnum.PUBLIC,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        self.session.add(profile)
+        await self.session.commit()
+        await self.session.refresh(profile)
+        return profile
+    
+    # PUBLIC_INTERFACE
+    async def get_profile_by_user_id(self, user_id: str) -> Optional[UserProfileDB]:
+        """Get profile by user ID"""
+        result = await self.session.execute(
+            select(UserProfileDB).where(UserProfileDB.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+    
+    # PUBLIC_INTERFACE
+    async def get_profile_by_id(self, profile_id: str) -> Optional[UserProfileDB]:
+        """Get profile by profile ID"""
+        result = await self.session.execute(
+            select(UserProfileDB).where(UserProfileDB.profile_id == profile_id)
+        )
+        return result.scalar_one_or_none()
+    
+    # PUBLIC_INTERFACE
+    async def update_profile(self, profile_id: str, profile_data: UserProfileUpdate) -> Optional[UserProfileDB]:
+        """Update profile information"""
+        profile = await self.get_profile_by_id(profile_id)
+        if not profile:
+            return None
+            
+        # Update fields that are not None
+        for field_name, value in profile_data.dict(exclude_unset=True).items():
+            if value is not None:
+                if field_name in ['website', 'avatar_url', 'cover_image_url'] and value:
+                    setattr(profile, field_name, str(value))
+                else:
+                    setattr(profile, field_name, value)
+                    
+        profile.updated_at = datetime.utcnow()
+        
+        await self.session.commit()
+        await self.session.refresh(profile)
+        return profile
 
 class MatchRepository(BaseRepository):
     """Repository for match operations"""

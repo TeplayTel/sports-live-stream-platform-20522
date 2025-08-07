@@ -12,10 +12,12 @@ from ..models.match import (
     SportType, MatchStatus
 )
 from ..models.emoji import EmojiAsset, UserEmojiReaction, EmojiType
+from ..models.profile import UserProfile, UserProfileResponse, NotificationPreference, ProfileVisibility
+from ..models.schedule import Schedule
 from .models import (
     UserDB, EventDB, MatchDB, TeamDB, MatchEventDB, HighlightDB,
-    EmojiAssetDB, UserEmojiReactionDB,
-    SportTypeEnum, MatchStatusEnum, UserRoleEnum, EmojiTypeEnum
+    EmojiAssetDB, UserEmojiReactionDB, UserProfileDB, ScheduleDB,
+    SportTypeEnum, MatchStatusEnum, UserRoleEnum, EmojiTypeEnum, ProfileVisibilityEnum
 )
 
 # PUBLIC_INTERFACE
@@ -34,7 +36,7 @@ def convert_user_db_to_response(user_db: UserDB) -> UserResponse:
         preferences = UserPreferences(**user_db.preferences)
     
     return UserResponse(
-        user_id=user_db.user_id,
+        user_id=str(user_db.user_id),
         email=user_db.email,
         username=user_db.username,
         full_name=user_db.full_name,
@@ -58,7 +60,7 @@ def convert_team_db_to_pydantic(team_db: TeamDB) -> Team:
         Team: Pydantic team model
     """
     return Team(
-        team_id=team_db.team_id,
+        team_id=str(team_db.team_id),
         name=team_db.name,
         short_name=team_db.short_name,
         logo_url=team_db.logo_url,
@@ -82,7 +84,7 @@ def convert_event_db_to_pydantic(event_db: EventDB, include_matches: bool = Fals
         matches = [convert_match_db_to_pydantic(match) for match in event_db.matches]
     
     return Event(
-        event_id=event_db.event_id,
+        event_id=str(event_db.event_id),
         name=event_db.name,
         description=event_db.description,
         sport_type=SportType(event_db.sport_type.value),
@@ -110,11 +112,11 @@ def convert_match_event_db_to_pydantic(match_event_db: MatchEventDB) -> MatchEve
         MatchEvent: Pydantic match event model
     """
     return MatchEvent(
-        event_id=match_event_db.event_id,
-        match_id=match_event_db.match_id,
+        event_id=str(match_event_db.event_id),
+        match_id=str(match_event_db.match_id),
         event_type=match_event_db.event_type,
         minute=match_event_db.minute,
-        team_id=match_event_db.team_id,
+        team_id=str(match_event_db.team_id),
         player_name=match_event_db.player_name,
         description=match_event_db.description,
         created_at=match_event_db.created_at
@@ -156,8 +158,8 @@ def convert_match_db_to_pydantic(match_db: MatchDB) -> Match:
         events = [convert_match_event_db_to_pydantic(event) for event in match_db.match_events]
     
     return Match(
-        match_id=match_db.match_id,
-        event_id=match_db.event_id,
+        match_id=str(match_db.match_id),
+        event_id=str(match_db.event_id),
         home_team=home_team,
         away_team=away_team,
         sport_type=SportType(match_db.sport_type.value),
@@ -196,8 +198,8 @@ def convert_highlight_db_to_pydantic(highlight_db: HighlightDB) -> Highlight:
             tags = list(highlight_db.tags.keys()) if highlight_db.tags else []
     
     return Highlight(
-        highlight_id=highlight_db.highlight_id,
-        match_id=highlight_db.match_id,
+        highlight_id=str(highlight_db.highlight_id),
+        match_id=str(highlight_db.match_id),
         title=highlight_db.title,
         description=highlight_db.description,
         video_url=highlight_db.video_url,
@@ -220,7 +222,7 @@ def convert_emoji_db_to_pydantic(emoji_db: EmojiAssetDB) -> EmojiAsset:
         EmojiAsset: Pydantic emoji asset model
     """
     return EmojiAsset(
-        emoji_id=emoji_db.emoji_id,
+        emoji_id=str(emoji_db.emoji_id),
         emoji_type=EmojiType(emoji_db.emoji_type.value),
         image_url=emoji_db.image_url,
         name=emoji_db.name,
@@ -242,10 +244,136 @@ def convert_reaction_db_to_pydantic(reaction_db: UserEmojiReactionDB) -> UserEmo
         UserEmojiReaction: Pydantic user emoji reaction model
     """
     return UserEmojiReaction(
-        user_id=reaction_db.user_id,
-        event_id=reaction_db.event_id,
-        emoji_id=reaction_db.emoji_id,
+        user_id=str(reaction_db.user_id),
+        event_id=str(reaction_db.event_id),
+        emoji_id=str(reaction_db.emoji_id),
         created_at=reaction_db.created_at
+    )
+
+# PUBLIC_INTERFACE
+def convert_user_profile_db_to_pydantic(profile_db: UserProfileDB) -> UserProfile:
+    """
+    Convert UserProfileDB to UserProfile pydantic model
+    
+    Args:
+        profile_db: SQLAlchemy UserProfileDB instance
+        
+    Returns:
+        UserProfile: Pydantic model instance
+    """
+    # Convert notification preferences from JSON to pydantic models
+    notification_prefs = []
+    if profile_db.notification_preferences:
+        for pref_data in profile_db.notification_preferences:
+            if isinstance(pref_data, dict):
+                notification_prefs.append(NotificationPreference(**pref_data))
+            else:
+                notification_prefs.append(pref_data)
+    else:
+        # Default notification preferences
+        notification_prefs = [
+            NotificationPreference(type="match_start", enabled=True, frequency="immediate"),
+            NotificationPreference(type="score_update", enabled=True, frequency="immediate"),
+            NotificationPreference(type="match_end", enabled=True, frequency="immediate"),
+            NotificationPreference(type="highlights_available", enabled=True, frequency="immediate"),
+            NotificationPreference(type="team_news", enabled=False, frequency="daily"),
+            NotificationPreference(type="weekly_summary", enabled=True, frequency="weekly")
+        ]
+    
+    return UserProfile(
+        profile_id=str(profile_db.profile_id),
+        user_id=str(profile_db.user_id),
+        display_name=profile_db.display_name,
+        bio=profile_db.bio,
+        location=profile_db.location,
+        website=profile_db.website,
+        avatar_url=profile_db.avatar_url,
+        cover_image_url=profile_db.cover_image_url,
+        favorite_teams=profile_db.favorite_teams or [],
+        favorite_sports=profile_db.favorite_sports or [],
+        favorite_players=profile_db.favorite_players or [],
+        favorite_leagues=profile_db.favorite_leagues or [],
+        notification_preferences=notification_prefs,
+        profile_visibility=ProfileVisibility(profile_db.profile_visibility.value),
+        show_favorite_teams=profile_db.show_favorite_teams,
+        show_activity=profile_db.show_activity,
+        allow_friend_requests=profile_db.allow_friend_requests,
+        total_reactions=profile_db.total_reactions,
+        matches_watched=profile_db.matches_watched,
+        highlights_watched=profile_db.highlights_watched,
+        preferred_language=profile_db.preferred_language,
+        timezone=profile_db.timezone,
+        date_format=profile_db.date_format,
+        time_format=profile_db.time_format,
+        is_verified=profile_db.is_verified,
+        is_public=profile_db.is_public,
+        created_at=profile_db.created_at,
+        updated_at=profile_db.updated_at
+    )
+
+# PUBLIC_INTERFACE
+def convert_user_profile_db_to_response(profile_db: UserProfileDB) -> UserProfileResponse:
+    """
+    Convert UserProfileDB to UserProfileResponse pydantic model
+    
+    Args:
+        profile_db: SQLAlchemy UserProfileDB instance
+        
+    Returns:
+        UserProfileResponse: Pydantic model instance for API responses
+    """
+    return UserProfileResponse(
+        profile_id=str(profile_db.profile_id),
+        user_id=str(profile_db.user_id),
+        display_name=profile_db.display_name,
+        bio=profile_db.bio,
+        location=profile_db.location,
+        website=profile_db.website,
+        avatar_url=profile_db.avatar_url,
+        cover_image_url=profile_db.cover_image_url,
+        favorite_teams=profile_db.favorite_teams or [],
+        favorite_sports=profile_db.favorite_sports or [],
+        favorite_players=profile_db.favorite_players or [],
+        favorite_leagues=profile_db.favorite_leagues or [],
+        profile_visibility=ProfileVisibility(profile_db.profile_visibility.value),
+        total_reactions=profile_db.total_reactions,
+        matches_watched=profile_db.matches_watched,
+        highlights_watched=profile_db.highlights_watched,
+        is_verified=profile_db.is_verified,
+        preferred_language=profile_db.preferred_language,
+        timezone=profile_db.timezone,
+        created_at=profile_db.created_at,
+        updated_at=profile_db.updated_at
+    )
+
+# PUBLIC_INTERFACE
+def convert_schedule_db_to_pydantic(schedule_db: ScheduleDB) -> Schedule:
+    """
+    Convert ScheduleDB to Schedule pydantic model
+    
+    Args:
+        schedule_db: SQLAlchemy ScheduleDB instance
+        
+    Returns:
+        Schedule: Pydantic model instance
+    """
+    # Convert related matches
+    matches = []
+    featured_matches = []
+    
+    if schedule_db.matches:
+        for match_db in schedule_db.matches:
+            match_pydantic = convert_match_db_to_pydantic(match_db)
+            matches.append(match_pydantic)
+    
+    return Schedule(
+        schedule_id=str(schedule_db.schedule_id),
+        date=schedule_db.date.date(),
+        matches=matches,
+        total_matches=schedule_db.total_matches,
+        featured_matches=featured_matches,
+        created_at=schedule_db.created_at,
+        updated_at=schedule_db.updated_at
     )
 
 # PUBLIC_INTERFACE
@@ -295,12 +423,14 @@ ENUM_MAPPINGS = {
     MatchStatus: MatchStatusEnum,
     UserRole: UserRoleEnum,
     EmojiType: EmojiTypeEnum,
+    ProfileVisibility: ProfileVisibilityEnum,
     
     # SQLAlchemy to Pydantic
     SportTypeEnum: SportType,
     MatchStatusEnum: MatchStatus,
     UserRoleEnum: UserRole,
     EmojiTypeEnum: EmojiType,
+    ProfileVisibilityEnum: ProfileVisibility,
 }
 
 # PUBLIC_INTERFACE

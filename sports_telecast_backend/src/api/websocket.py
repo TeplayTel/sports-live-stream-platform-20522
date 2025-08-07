@@ -4,10 +4,10 @@ import json
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from websocket.manager import manager
-from auth.jwt_auth import JWTAuth
-from database import get_db
-from database.repositories import MatchRepository, EmojiRepository
+from ..websocket.manager import manager
+from ..auth.jwt_auth import JWTAuth
+from ..database import get_db
+from ..database.repositories import MatchRepository, EmojiRepository
 
 logger = logging.getLogger(__name__)
 

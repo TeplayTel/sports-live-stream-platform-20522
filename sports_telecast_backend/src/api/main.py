@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from .auth import router as auth_router
 from .profiles import router as profiles_router
 from .emoji import router as emoji_router
-from sports_telecast_backend.api.emoji_upload import router as emoji_upload_router
+from ..api.emoji_upload import router as emoji_upload_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
 

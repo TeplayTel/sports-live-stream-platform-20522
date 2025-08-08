@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 import logging
 from contextlib import asynccontextmanager
 
-# Import routers ONLY for cricket streaming & user auth/profile
+# Import routers
 from .auth import router as auth_router
 from .profiles import router as profiles_router
 from .emoji import router as emoji_router
@@ -22,6 +22,32 @@ from ..database import (
 
 # Import middleware
 from ..middleware.api_logger import APILoggingMiddleware, set_api_logger
+
+# Simple universal utility to extract trusted user from headers/params/body
+# PUBLIC_INTERFACE
+def get_trusted_user(request: Request):
+    """
+    Extract a trusted user_id and user_data from request.
+    Order of precedence: headers > query params > request body.
+    Headers: X-User-Id (userId), X-User-Data (userData as JSON string)
+    """
+    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id") or None
+    import json
+    user_data = None
+    data = request.headers.get("X-User-Data")
+    if data:
+        try:
+            user_data = json.loads(data)
+        except Exception:
+            user_data = None
+    else:
+        ud = request.query_params.get("user_data")
+        if ud:
+            try:
+                user_data = json.loads(ud)
+            except Exception:
+                user_data = None
+    return user_id, user_data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -84,12 +110,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add API logging middleware (retained for logging, but API logs endpoints are removed)
 api_logger_middleware = APILoggingMiddleware(app)
 set_api_logger(api_logger_middleware)
 app.add_middleware(APILoggingMiddleware)
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, tighten this
@@ -98,7 +122,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler for unhandled errors"""
@@ -111,7 +134,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# Health check endpoint
 @app.get("/", tags=["Health"], summary="Health Check")
 async def health_check():
     """
@@ -151,7 +173,6 @@ async def health_check():
         }
     }
 
-# Database health check endpoint
 @app.get("/health/database", tags=["Health"], summary="Database Health Check")
 async def database_health_check():
     """
@@ -164,7 +185,6 @@ async def database_health_check():
         "database": db_health
     }
 
-# Include only required API routers
 app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(emoji_router)
@@ -172,7 +192,6 @@ app.include_router(emoji_upload_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
 
-# API documentation tags (cricket/event, no users/admin/multisport/schedule/matchlisting/api_logs)
 tags_metadata = [
     {
         "name": "Health",
@@ -199,7 +218,6 @@ tags_metadata = [
         "description": "Real-time WebSocket connections for cricket live updates and emoji reactions"
     }
 ]
-
 app.openapi_tags = tags_metadata
 
 if __name__ == "__main__":

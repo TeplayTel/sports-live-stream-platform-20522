@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Body, Request
+from fastapi import APIRouter, HTTPException, status, Body, Request, Depends
 from passlib.context import CryptContext
 
 from ..models.user import UserLogin, UserResponse, TokenData, UserUpdate
@@ -15,11 +15,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # PUBLIC_INTERFACE
 @router.post("/login", response_model=TokenData, summary="User login")
-async def login_user(login_data: UserLogin = Body(...), request: Request = None, db: AsyncSession = None):
+async def login_user(
+    login_data: UserLogin = Body(...),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
     User login with trusted userId/userData (no auth).
+
+    - **login_data**: UserLogin request with email and password.
+    - **returns**: TokenData (JWT access token + user info)
     """
-    db = db or await get_db().__anext__()
     repo = UserRepository(db)
     user = await repo.get_user_by_email(login_data.email)
     if not user or not pwd_context.verify(login_data.password, user.password_hash):
@@ -34,11 +40,15 @@ async def login_user(login_data: UserLogin = Body(...), request: Request = None,
 
 # PUBLIC_INTERFACE
 @router.get("/me", response_model=UserResponse, summary="Get current user")
-async def get_current_user_profile(request: Request = None, db: AsyncSession = None):
+async def get_current_user_profile(
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Get the current trusted/mock user's profile (from headers/params/body).
+
+    - **returns**: UserResponse profile
     """
-    db = db or await get_db().__anext__()
     user_id, _ = get_trusted_user(request)
     repo = UserRepository(db)
     user = await repo.get_user_by_id(user_id)
@@ -52,12 +62,14 @@ async def get_current_user_profile(request: Request = None, db: AsyncSession = N
 async def update_current_user_profile(
     user_update: UserUpdate = Body(...),
     request: Request = None,
-    db: AsyncSession = None
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Update the trusted/mock user's profile.
+
+    - **user_update**: UserUpdate payload
+    - **returns**: UserResponse updated profile
     """
-    db = db or await get_db().__anext__()
     user_id, _ = get_trusted_user(request)
     repo = UserRepository(db)
     user = await repo.update_user(user_id, user_update)
@@ -68,11 +80,15 @@ async def update_current_user_profile(
 
 # PUBLIC_INTERFACE
 @router.post("/refresh", response_model=TokenData, summary="Refresh access token")
-async def refresh_access_token(request: Request = None, db: AsyncSession = None):
+async def refresh_access_token(
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Refresh the access token (dummy for mock mode).
+
+    - **returns**: TokenData (JWT access token + user info)
     """
-    db = db or await get_db().__anext__()
     user_id, _ = get_trusted_user(request)
     repo = UserRepository(db)
     user = await repo.get_user_by_id(user_id)

@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+
+# Load environment variables from .env automatically, supporting local development and deployment
+load_dotenv()
+
 import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -11,6 +16,13 @@ from contextlib import asynccontextmanager
 # PUBLIC_INTERFACE
 # Use only the provided environment variable for DB connection string.
 # This backend strictly requires DATABASE_URL or POSTGRES_URL to be set in the environment.
+# Only the full PostgreSQL connection string is used by this backend:
+#
+#   - DATABASE_URL (preferred key)
+#   - POSTGRES_URL (alternative key; used if DATABASE_URL is absent)
+#
+# Other env vars (POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, etc.) are NOT parsed and not required for backend startup.
+# The .env file may contain these, but only the full connection string var is used.
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
 

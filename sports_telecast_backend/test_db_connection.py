@@ -3,6 +3,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 
+# Load environment variables from the .env file to configure test settings (such as database credentials).
 load_dotenv()
 
 async def test_connection():

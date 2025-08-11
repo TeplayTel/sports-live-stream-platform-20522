@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
 print("===============DATABASE_URL at runtime:", DATABASE_URL)
+print("[DEBUG] DATABASE_URL used by BE:", DATABASE_URL)
 if not DATABASE_URL:
     raise RuntimeError(
         "DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection.\n"

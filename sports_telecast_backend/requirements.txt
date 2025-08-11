@@ -47,3 +47,6 @@ websockets==15.0.1
 sqlalchemy[asyncio]==2.0.23
 asyncpg==0.29.0
 alembic==1.13.1
+
+# PostgreSQL database driver - required for Django and SQLAlchemy with PostgreSQL
+psycopg2-binary>=2.9.0  # Binary version, easier installation for local/dev. Production can use psycopg2 if source build is preferred.

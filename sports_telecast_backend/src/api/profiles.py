@@ -11,7 +11,7 @@ from ..database.connection import get_db
 from ..database.models import UserProfileDB, UserDB, ProfileVisibilityEnum
 from datetime import datetime
 import uuid
-from .main import get_trusted_user
+from .utils import get_trusted_user
 
 router = APIRouter(prefix="/profiles", tags=["User Profiles"])
 

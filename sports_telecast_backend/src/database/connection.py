@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -78,7 +78,7 @@ async def check_database_connection():
     :return: True if connection OK, raises exception otherwise
     """
     async with async_engine.connect() as conn:
-        await conn.execute("SELECT 1")
+        await conn.execute(text("SELECT 1"))
     return True
 
 # PUBLIC_INTERFACE

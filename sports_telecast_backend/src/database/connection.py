@@ -91,3 +91,29 @@ async def get_database_health():
         return {"status": "ok" if ok else "error"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+
+# =============================================================================
+# File summary and future notes
+# =============================================================================
+# Purpose:
+#   This file establishes and manages the database connection settings,
+#   including engine creation and database session management for the
+#   sports telecast backend. It is a foundational part of the API's interaction
+#   with PostgreSQL, supporting CRUD operations for user, event, match, and
+#   profile data.
+#
+# Usage notes:
+#   - Import the get_db dependency in FastAPI routes for database access:
+#       from src.database.connection import get_db
+#   - Handles session management (open/close).
+#   - Relies on environment variables in .env for PostgreSQL connectivity.
+#   - Ensure appropriate models are imported before running migrations.
+#
+# Reminders & future improvements:
+#   - Consider adding connection pooling configuration for high-traffic scenarios.
+#   - Add automated reconnection logic for robustness in case of dropped connections.
+#   - Evaluate async session management if application requires high concurrency.
+#   - Document any custom session configurations here when modified.
+#
+# Last updated: 2024-06 (Kavia code generation agent)

@@ -211,13 +211,24 @@ The backend includes sample data for testing:
 
 Environment variables (see `.env.example`):
 
+**Database URL for PostgreSQL — Required**
+
+You must set either `POSTGRES_URL` (recommended, aligns with Docker and most cloud envs) **or** `DATABASE_URL` (if you're using hosting providers/services that set this by default).
+
+- If **both** variables are set, the backend will use `DATABASE_URL` by default.
+- If **neither** is set when the app starts, the backend will fail to start and throw an error:  
+  _"DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection..."_
+
+Example `.env`:
 ```bash
 # JWT Configuration
 JWT_SECRET_KEY=your-super-secret-jwt-key
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
-# Database (for production)
-POSTGRES_URL=postgresql://user:password@localhost:5432/sports_telecast
+# Database connection string
+POSTGRES_URL=postgresql+psycopg2://user:password@localhost:5432/sports_telecast
+# DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/sports_telecast  # Optional, if used with certain cloud platforms
+
 POSTGRES_USER=sports_user
 POSTGRES_PASSWORD=sports_password
 POSTGRES_DB=sports_telecast_db

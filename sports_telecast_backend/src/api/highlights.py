@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Query, Request
 from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+# from sqlalchemy.ext.asyncio import AsyncSession  # Removed unused import that could confuse response typing
 # Use response models from database.schemas, as all conversions/proxying use these
 from ..database import get_db
 from ..database.repositories import HighlightRepository
@@ -16,11 +16,13 @@ async def get_highlights(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     match_id: Optional[str] = Query(None, description="Filter by match ID"),
     request: Request = None,
-    db_session: AsyncSession = None
-):
+    db_session = None  # No type annotation; do not treat as FastAPI dependency with response type
+) -> dict:
     """
     Get paginated list of match highlights
     Accepts userId/userData from headers/params as trusted (no auth).
+
+    Ensures only serializable structures are returned; ORM/session objects never returned.
     """
     db_session = db_session or await get_db().__anext__()
     get_trusted_user(request)
@@ -34,7 +36,7 @@ async def get_highlights(
     highlights = [convert_highlight_db_to_response(highlight) for highlight in highlights_db]
     all_highlights_db = await highlight_repo.get_highlights(limit=1000, offset=0, match_id=match_id)
     total = len(all_highlights_db)
-    # Return a dict so that the response_model requirement is fulfilled
+    # Ensures the returned value is a dict, suitable for JSON serialization
     return {
         "highlights": [h.dict() if hasattr(h, "dict") else h for h in highlights],
         "total": total,
@@ -47,11 +49,13 @@ async def get_highlights(
 async def get_highlight_details(
     highlight_id: str,
     request: Request = None,
-    db_session: AsyncSession = None
-):
+    db_session = None  # No type annotation
+) -> dict:
     """
     Get detailed information about a specific highlight.
     Accepts userId/userData (if needed) from trusted frontend.
+
+    Always returns a serializable dict.
     """
     db_session = db_session or await get_db().__anext__()
     get_trusted_user(request)
@@ -67,11 +71,13 @@ async def get_highlight_details(
 async def get_featured_highlights(
     limit: int = Query(10, ge=1, le=50, description="Number of highlights to return"),
     request: Request = None,
-    db_session: AsyncSession = None
-):
+    db_session = None
+) -> dict:
     """
     Get latest featured highlights.
     Accepts userId/userData (if needed) from trusted frontend.
+
+    Always returns a serializable dict.
     """
     db_session = db_session or await get_db().__anext__()
     get_trusted_user(request)

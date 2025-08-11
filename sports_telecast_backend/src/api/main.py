@@ -1,3 +1,11 @@
+# Ensure environment variables from a .env file are available before any other imports.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # In production, .env auto-loading is optional
+    pass
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

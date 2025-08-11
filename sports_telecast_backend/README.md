@@ -2,7 +2,7 @@
 
 A comprehensive FastAPI backend for a sports live streaming platform that provides real-time match data, emoji reactions, and WebSocket support for live updates.
 
-## 🏟️ Features
+## 🏗️ Features
 
 - **Live Match Data**: Real-time scores, events, and statistics
 - **Event Schedules**: Upcoming matches and tournament information
@@ -54,6 +54,30 @@ A comprehensive FastAPI backend for a sports live streaming platform that provid
    - Health Check: http://localhost:8000/
    - OpenAPI Spec: http://localhost:8000/openapi.json
 
+## 🛠 Database Setup and Configuration
+
+The backend connects to a PostgreSQL database, using environment variables found in your `.env` file.
+
+**If developing in Docker / containerized environments:**
+- Set `POSTGRES_HOST` to the database service name (e.g. `sports_telecast_db`).
+- Example:
+  ```
+  DATABASE_URL=postgresql://appuser:dbuser123@sports_telecast_db:5000/myapp
+  ```
+- The default DB user/role is `appuser`. There is **no** `kavia` user/role, so never use it in your settings.
+
+**If developing directly on localhost (no container):**
+- Use `localhost` for the host fields.
+  ```
+  DATABASE_URL=postgresql://appuser:dbuser123@localhost:5000/myapp
+  ```
+- The default database port is `5000` as set in the included DB setup scripts.
+
+**Environment Template:** see `.env.example` for the correct configuration.
+
+**Do not use the 'kavia' user as it does not exist on the default dev database. Use only 'appuser'.**  
+If you change database user or password, make sure to update both the database container and this backend.
+
 ## 📚 API Documentation
 
 ### Authentication Endpoints
@@ -102,7 +126,7 @@ A comprehensive FastAPI backend for a sports live streaming platform that provid
 | `ws://localhost:8000/ws/{event_id}?token={jwt_token}` | WebSocket connection for real-time updates | Optional |
 | GET `/ws/stats` | WebSocket connection statistics | No |
 
-## 🎯 Emoji Reactions API
+## 🏆 Emoji Reactions API
 
 The emoji reactions feature follows the specified API contract:
 
@@ -195,7 +219,7 @@ src/
 1. **FastAPI Application**: Main API server with automatic documentation
 2. **JWT Authentication**: Secure token-based auth with bcrypt password hashing
 3. **WebSocket Manager**: Real-time connection management for live updates
-4. **Mock Database**: In-memory data store (replace with PostgreSQL in production)
+4. **PostgreSQL Database**: With dev user 'appuser', see `.env.example`
 5. **Pydantic Models**: Type-safe data validation and serialization
 
 ### Sample Data
@@ -207,11 +231,9 @@ The backend includes sample data for testing:
 - **Events**: Premier League 2024-25 season
 - **Highlights**: Video highlights for completed matches
 
-## 🔧 Configuration
+## 🛠️ Configuration
 
 Environment variables (see `.env.example`):
-
-**Database URL for PostgreSQL — Required**
 
 You must set either `POSTGRES_URL` (recommended, aligns with Docker and most cloud envs) **or** `DATABASE_URL` (if you're using hosting providers/services that set this by default).
 
@@ -220,19 +242,19 @@ You must set either `POSTGRES_URL` (recommended, aligns with Docker and most clo
   _"DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection..."_
 
 Example `.env`:
+
 ```bash
 # JWT Configuration
 JWT_SECRET_KEY=your-super-secret-jwt-key
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
-# Database connection string
-POSTGRES_URL=postgresql+psycopg2://user:password@localhost:5432/sports_telecast
-# DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/sports_telecast  # Optional, if used with certain cloud platforms
+# Database connection string (see explanation above)
+DATABASE_URL=postgresql://appuser:dbuser123@localhost:5000/myapp
 
-POSTGRES_USER=sports_user
-POSTGRES_PASSWORD=sports_password
-POSTGRES_DB=sports_telecast_db
-POSTGRES_PORT=5432
+POSTGRES_USER=appuser
+POSTGRES_PASSWORD=dbuser123
+POSTGRES_DB=myapp
+POSTGRES_PORT=5000
 
 # External Services
 CDN_BASE_URL=https://cdn.mydomain.com
@@ -243,8 +265,8 @@ STREAM_BASE_URL=https://stream.mydomain.com
 
 For production deployment:
 
-1. **Replace Mock Database**: Integrate with PostgreSQL using SQLAlchemy
-2. **Environment Variables**: Set secure JWT secrets and database credentials
+1. **Integrate with cloud PostgreSQL using correct URL and credentials**
+2. **Set secure JWT secrets and database credentials**
 3. **CORS Configuration**: Restrict origins to your frontend domains
 4. **Rate Limiting**: Implement API rate limiting
 5. **Logging**: Configure structured logging
@@ -302,7 +324,7 @@ curl -X GET "http://localhost:8000/fan-engagement/emoji/v1/reactions/MATCH001"
 
 This project is licensed under the MIT License.
 
-## 🆘 Support
+## 🏛 Support
 
 For support and questions:
 - 📧 Email: support@sportstelecast.com

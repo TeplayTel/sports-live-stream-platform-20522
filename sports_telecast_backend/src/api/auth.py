@@ -6,7 +6,7 @@ from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
 from sqlalchemy.ext.asyncio import AsyncSession
-from .main import get_trusted_user
+from .utils import get_trusted_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

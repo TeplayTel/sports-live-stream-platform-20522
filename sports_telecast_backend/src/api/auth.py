@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Body, Request
 from passlib.context import CryptContext
 
-from ..models.user import UserCreate, UserLogin, UserResponse, TokenData, UserUpdate
+from ..models.user import UserLogin, UserResponse, TokenData, UserUpdate
 from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
@@ -11,28 +11,7 @@ from .utils import get_trusted_user
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# PUBLIC_INTERFACE
-@router.post("/register", response_model=TokenData, summary="Register new user")
-async def register_user(user_data: UserCreate = Body(...), request: Request = None, db: AsyncSession = None):
-    """
-    Register a new user account.
-    No authentication required, accepts userId/userData from frontend.
-    """
-    db = db or await get_db().__anext__()
-    repo = UserRepository(db)
-    existing_user = await repo.get_user_by_email(user_data.email)
-    if existing_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-    password_hash = pwd_context.hash(user_data.password)
-    user = await repo.create_user(user_data, password_hash=password_hash)
-    # mock token generation
-    user_response = convert_user_db_to_response(user)
-    return TokenData(
-        access_token="mock_token",  # No real JWT
-        token_type="bearer",
-        expires_in=86400,  # 24h
-        user=user_response
-    )
+
 
 # PUBLIC_INTERFACE
 @router.post("/login", response_model=TokenData, summary="User login")

@@ -183,7 +183,7 @@ tags_metadata = [
     },
     {
         "name": "Authentication", 
-        "description": "User authentication, registration, and JWT token management"
+        "description": "User authentication and JWT token management"
     },
     {
         "name": "User Profiles",

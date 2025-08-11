@@ -6,7 +6,7 @@ from ..models.emoji import (
 from ..database.repositories import EmojiRepository, MatchRepository, EventRepository
 from ..database.schemas import convert_emoji_db_to_pydantic
 from ..websocket.manager import manager
-from .main import get_trusted_user
+from .utils import get_trusted_user
 
 router = APIRouter(prefix="/fan-engagement/emoji/v1", tags=["Fan Engagement - Emojis"])
 

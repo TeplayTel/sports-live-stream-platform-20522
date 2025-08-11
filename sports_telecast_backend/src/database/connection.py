@@ -1,3 +1,4 @@
+# Loads environment variables from a .env file for application configuration
 from dotenv import load_dotenv
 
 # Load environment variables from .env automatically, supporting local development and deployment

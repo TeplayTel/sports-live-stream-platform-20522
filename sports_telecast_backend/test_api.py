@@ -1,8 +1,8 @@
 """
 Comprehensive API testing script for Sports Telecast Backend
 Tests all major endpoints and functionality
-
 """
+
 import requests
 import time
 import sys
@@ -31,36 +31,9 @@ class APITester:
         except Exception as e:
             print(f"❌ Health check error: {e}")
             return False
-    
-    def test_user_registration(self) -> bool:
-        """Test user registration"""
-        print("🔍 Testing user registration...")
-        try:
-            user_data = {
-                "email": "testuser@example.com",
-                "username": "testuser123",
-                "password": "securepassword123",
-                "full_name": "Test User"
-            }
-            
-            response = self.session.post(
-                f"{self.base_url}/auth/register",
-                json=user_data
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.token = data["access_token"]
-                print(f"✅ User registration successful: {data['user']['username']}")
-                print(f"🔑 Token received: {self.token[:20]}...")
-                return True
-            else:
-                print(f"❌ Registration failed: {response.status_code} - {response.text}")
-                return False
-        except Exception as e:
-            print(f"❌ Registration error: {e}")
-            return False
-    
+
+    # Registration removed --------------------------------------------------------
+
     def test_matches_list(self) -> bool:
         """Test getting matches list"""
         print("🔍 Testing matches list...")
@@ -76,7 +49,7 @@ class APITester:
         except Exception as e:
             print(f"❌ Matches list error: {e}")
             return False
-    
+
     def test_live_matches(self) -> bool:
         """Test getting live matches"""
         print("🔍 Testing live matches...")
@@ -95,11 +68,11 @@ class APITester:
         except Exception as e:
             print(f"❌ Live matches error: {e}")
             return False
-    
+
     def test_emoji_list(self) -> bool:
         """Test emoji list endpoint"""
         if not self.token:
-            print("❌ No token available for emoji test")
+            print("❌ No token available for emoji test (registration removed, skipping)")
             return False
             
         print("🔍 Testing emoji list...")
@@ -109,7 +82,6 @@ class APITester:
                 f"{self.base_url}/fan-engagement/emoji/v1/listEmojis",
                 headers=headers
             )
-            
             if response.status_code == 200:
                 data = response.json()
                 print(f"✅ Emoji list: {len(data['emojis'])} emojis available")
@@ -122,11 +94,11 @@ class APITester:
         except Exception as e:
             print(f"❌ Emoji list error: {e}")
             return False
-    
+
     def test_emoji_reaction(self) -> bool:
         """Test emoji reaction submission"""
         if not self.token:
-            print("❌ No token available for emoji reaction test")
+            print("❌ No token available for emoji reaction test (registration removed, skipping)")
             return False
             
         print("🔍 Testing emoji reaction...")
@@ -137,13 +109,11 @@ class APITester:
                 "emoji_id": "EMJ103",
                 "created_at": "2025-08-04T15:30:00Z"
             }
-            
             response = self.session.post(
                 f"{self.base_url}/fan-engagement/emoji/v1/userEmojiReaction",
                 headers=headers,
                 json=reaction_data
             )
-            
             if response.status_code == 200:
                 data = response.json()
                 print(f"✅ Emoji reaction successful: {data['status']}")
@@ -154,7 +124,7 @@ class APITester:
         except Exception as e:
             print(f"❌ Emoji reaction error: {e}")
             return False
-    
+
     def test_reaction_summary(self) -> bool:
         """Test getting reaction summary"""
         print("🔍 Testing reaction summary...")
@@ -162,7 +132,6 @@ class APITester:
             response = self.session.get(
                 f"{self.base_url}/fan-engagement/emoji/v1/reactions/MATCH001"
             )
-            
             if response.status_code == 200:
                 data = response.json()
                 print(f"✅ Reaction summary: {data['total_reactions']} total reactions")
@@ -177,7 +146,7 @@ class APITester:
         except Exception as e:
             print(f"❌ Reaction summary error: {e}")
             return False
-    
+
     def test_highlights(self) -> bool:
         """Test highlights endpoint"""
         print("🔍 Testing highlights...")
@@ -196,7 +165,7 @@ class APITester:
         except Exception as e:
             print(f"❌ Highlights error: {e}")
             return False
-    
+
     def test_websocket_stats(self) -> bool:
         """Test WebSocket statistics"""
         print("🔍 Testing WebSocket stats...")
@@ -212,14 +181,14 @@ class APITester:
         except Exception as e:
             print(f"❌ WebSocket stats error: {e}")
             return False
-    
+
     def run_all_tests(self) -> bool:
         """Run all API tests"""
         print("🏟️ Starting Sports Telecast Backend API Tests...\n")
         
         tests = [
             ("Health Check", self.test_health_check),
-            ("User Registration", self.test_user_registration),
+            # ("User Registration", self.test_user_registration), # Removed
             ("Matches List", self.test_matches_list),
             ("Live Matches", self.test_live_matches),
             ("Emoji List", self.test_emoji_list),

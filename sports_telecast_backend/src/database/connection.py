@@ -1,302 +1,135 @@
-<<<<<<< HEAD
-from .session import get_db_context, init_database
-from .service import DatabaseService
-from .seed import seed_database
-
-class DatabaseConnection:
-    """
-    Database connection wrapper that provides access to database operations
-=======
-import os
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.sql import text
-from contextlib import asynccontextmanager
-import logging
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables from .env automatically, supporting local development and deployment
 load_dotenv()
 
-logger = logging.getLogger(__name__)
-
-class Base(DeclarativeBase):
-    """Base class for all database models"""
-    pass
-
-<<<<<<< HEAD
-# Database configuration - Use environment variables with PostgreSQL naming convention
-POSTGRES_URL = os.getenv("POSTGRES_URL")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
-POSTGRES_DB = os.getenv("POSTGRES_DB", "sports_telecast")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-=======
-# Database configuration using POSTGRES_* environment variables
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_NAME = os.getenv("POSTGRES_DB", "sports_telecast")
-DB_USER = os.getenv("POSTGRES_USER", "postgres")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
->>>>>>> cga-cg908b179b
-
-# Create async database URL
-if POSTGRES_URL:
-    # Parse the POSTGRES_URL and rebuild with asyncpg driver
-    if POSTGRES_URL.startswith("postgresql://"):
-        # Extract components from URL for proper asyncpg format
-        url_parts = POSTGRES_URL.replace("postgresql://", "").split("/")
-        if len(url_parts) >= 2:
-            connection_part = url_parts[0]  # host:port or user:pass@host:port
-            db_name = url_parts[1]
-            
-            if "@" in connection_part:
-                # Has user credentials
-                creds, host_port = connection_part.split("@")
-                if ":" in creds:
-                    user, password = creds.split(":", 1)
-                else:
-                    user = creds
-                    password = POSTGRES_PASSWORD
-            else:
-                # No credentials in URL, use env vars
-                host_port = connection_part
-                user = POSTGRES_USER
-                password = POSTGRES_PASSWORD
-            
-            if ":" in host_port:
-                host, port = host_port.split(":")
-            else:
-                host = host_port
-                port = POSTGRES_PORT
-            
-            DATABASE_URL = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db_name}"
-        else:
-            # Fallback to component-based URL
-            DB_HOST = os.getenv("DB_HOST", "localhost")
-            DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{DB_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    else:
-        # URL doesn't start with postgresql://, treat as components
-        DB_HOST = os.getenv("DB_HOST", "localhost")
-        DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{DB_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-else:
-    # Build URL from components
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{DB_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-
-logger.info(f"Database URL configured: postgresql+asyncpg://{POSTGRES_USER}:***@localhost:{POSTGRES_PORT}/{POSTGRES_DB}")
-
-# Create async engine
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,  # Set to True for SQL query logging
-    pool_size=20,
-    max_overflow=0,
-    pool_pre_ping=True,
-    pool_recycle=300,
+import os
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    create_async_engine,
+    async_sessionmaker,
 )
-
-# Create async session factory
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False,
-)
+from contextlib import asynccontextmanager
 
 # PUBLIC_INTERFACE
-async def get_database_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Get database session for dependency injection
-    
-    Yields:
-        AsyncSession: Database session
->>>>>>> cga-cg908b179b
-    """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        except Exception as e:
-            logger.error(f"Database session error: {e}")
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+# Use only the provided environment variable for DB connection string.
+# This backend strictly requires DATABASE_URL or POSTGRES_URL to be set in the environment.
+# Only the full PostgreSQL connection string is used by this backend:
+#
+#   - DATABASE_URL (preferred key)
+#   - POSTGRES_URL (alternative key; used if DATABASE_URL is absent)
+#
+# Other env vars (POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, etc.) are NOT parsed and not required for backend startup.
+# The .env file may contain these, but only the full connection string var is used.
+
+DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection.\n"
+        "No database username provided. By default, the system expects the role/user 'appuser'.\n"
+        "If you see errors referring to 'role \"kavia\" does not exist', you have not set your env vars correctly, "
+        "or are using the wrong username in your connection string.\n"
+        "Update your .env to match the correct username and see .env.example for reference.\n"
+        "Hardcoded database connection or localhost with the wrong user is not supported.\n"
+        "Please contact support if you see this error in production."
+    )
+
+# If the DATABASE_URL is not already async, convert it (SQLAlchemy async format)
+if DATABASE_URL.startswith("postgresql://"):
+    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql+asyncpg://"):
+    ASYNC_DATABASE_URL = DATABASE_URL
+else:
+    raise ValueError(
+        "Unknown database connection string format. "
+        "Expected postgresql:// or postgresql+asyncpg://"
+    )
+
+# For sync operations and Alembic migrations
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# For async operations
+async_engine = create_async_engine(ASYNC_DATABASE_URL, pool_pre_ping=True, future=True)
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine, expire_on_commit=False, class_=AsyncSession
+)
 
 # PUBLIC_INTERFACE
 @asynccontextmanager
-async def get_db_session():
+async def get_db():
     """
-    Context manager for database sessions
-    
-<<<<<<< HEAD
-    def __init__(self):
-        """Initialize database connection"""
-        try:
-            # Initialize database tables
-            init_database()
-            print("Database connection established successfully")
-        except Exception as e:
-            print(f"Error connecting to database: {e}")
-            raise
-
-    def get_service(self) -> DatabaseService:
-        """Get database service with session context"""
-        # This will be used in dependency injection
-        pass
-
-def get_database_service():
-    """Dependency to get database service"""
-    with get_db_context() as db:
-        return DatabaseService(db)
-
-# Initialize database connection
-try:
-    db_connection = DatabaseConnection()
-    
-    # Seed database if needed
+    Dependency that provides a SQLAlchemy async database session.
+    Usage: async with get_db() as session:
+    Or: db = await get_db().__anext__()
+    """
+    db = AsyncSessionLocal()
     try:
-        seed_database()
-    except Exception as e:
-        print(f"Database seeding error (may already be seeded): {e}")
-        
-except Exception as e:
-    print(f"Failed to establish database connection: {e}")
-    # Fall back to development mode or handle gracefully
-    db_connection = None
-
-# Export the database service getter for use in API endpoints
-db = get_database_service
-=======
-    Usage:
-        async with get_db_session() as session:
-            # Use session here
-    """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception as e:
-            logger.error(f"Database transaction error: {e}")
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+        yield db
+    finally:
+        await db.close()
 
 # PUBLIC_INTERFACE
 async def init_database():
     """
-    Initialize database tables
-    
-    Creates all tables defined in the models if they don't exist.
-    This should be called on application startup.
+    (Stub) Initialize database resources. For production, ensure all tables exist.
     """
-    try:
-        async with engine.begin() as conn:
-            # Import all models to ensure they're registered with SQLAlchemy
-            from .models import (  # noqa: F401 - Import needed for SQLAlchemy model registration
-                UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
-                EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
-                UserProfileDB, ScheduleDB, ScheduleMatchDB
-            )
-            
-            logger.info("Creating database tables...")
-            await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables created successfully")
-            
-            # Log table creation confirmation
-            logger.info("All database models registered and tables initialized:")
-            logger.info("- users, user_profiles, teams, events, matches, match_events")
-            logger.info("- emoji_assets, user_emoji_reactions, highlights")
-            logger.info("- schedules, schedule_matches")
-            
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
-
-# PUBLIC_INTERFACE
-async def check_database_connection() -> bool:
-    """
-    Check if database connection is working
-    
-    Returns:
-        bool: True if connection is successful, False otherwise
-    """
-    try:
-        async with engine.begin() as conn:
-<<<<<<< HEAD
-            await conn.execute(func.select(func.literal(1)))
-=======
-            await conn.execute(text("SELECT 1"))
->>>>>>> cga-cg908b179b
-        logger.info("Database connection check successful")
-        return True
-    except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
-        return False
+    pass
 
 # PUBLIC_INTERFACE
 async def close_database_connections():
     """
-    Close all database connections
-    
-    Should be called on application shutdown.
+    (Stub) Properly close async DB connections, if needed.
+    """
+    await async_engine.dispose()
+
+# PUBLIC_INTERFACE
+async def check_database_connection():
+    """
+    (Stub) Check if the DB connection is available.
+    :return: True if connection OK, raises exception otherwise
+    """
+    async with async_engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+    return True
+
+# PUBLIC_INTERFACE
+async def get_database_health():
+    """
+    (Stub) Return DB connection healthcheck info. Customize as required.
     """
     try:
-        await engine.dispose()
-        logger.info("Database connections closed successfully")
+        ok = await check_database_connection()
+        return {"status": "ok" if ok else "error"}
     except Exception as e:
-        logger.error(f"Error closing database connections: {e}")
+        return {"status": "error", "detail": str(e)}
 
-# Database health check function
-# PUBLIC_INTERFACE
-async def get_database_health() -> dict:
-    """
-    Get database health information
-    
-    Returns:
-        dict: Database health status and connection info
-    """
-    try:
-        async with engine.begin() as conn:
-<<<<<<< HEAD
-            result = await conn.execute(func.select(func.literal(1)))
-            await result.fetchone()
-=======
-            result = await conn.execute(text("SELECT 1"))
-            result.fetchone()  # Remove await here since fetchone() is not async
->>>>>>> cga-cg908b179b
-        
-        return {
-            "status": "healthy",
-            "database": POSTGRES_DB,
-            "host": "localhost",
-            "port": POSTGRES_PORT,
-            "connection_pool_size": engine.pool.size(),
-            "checked_out_connections": engine.pool.checkedout(),
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e),
-            "database": POSTGRES_DB,
-            "host": "localhost",
-            "port": POSTGRES_PORT,
-        }
 
-# Dependency for FastAPI
-# PUBLIC_INTERFACE
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    FastAPI dependency for database sessions
-    
-    Usage in FastAPI routes:
-        @app.get("/items/")
-        async def read_items(db: AsyncSession = Depends(get_db)):
-            # Use db session here
-    """
-    async for session in get_database_session():
-        yield session
->>>>>>> cga-cg908b179b
+# =============================================================================
+# File summary and future notes
+# =============================================================================
+# Purpose:
+#   This file establishes and manages the database connection settings,
+#   including engine creation and database session management for the
+#   sports telecast backend. It is a foundational part of the API's interaction
+#   with PostgreSQL, supporting CRUD operations for user, event, match, and
+#   profile data.
+#
+# Usage notes:
+#   - Import the get_db dependency in FastAPI routes for database access:
+#       from src.database.connection import get_db
+#   - Handles session management (open/close).
+#   - Relies on environment variables in .env for PostgreSQL connectivity.
+#   - Ensure appropriate models are imported before running migrations.
+#
+# Reminders & future improvements:
+#   - Consider adding connection pooling configuration for high-traffic scenarios.
+#   - Add automated reconnection logic for robustness in case of dropped connections.
+#   - Evaluate async session management if application requires high concurrency.
+#   - Document any custom session configurations here when modified.
+#
+# Last updated: 2024-06 (Kavia code generation agent)

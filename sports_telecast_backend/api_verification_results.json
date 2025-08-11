@@ -1,0 +1,72 @@
+[
+  {
+    "endpoint": "GET /",
+    "status": "PASS",
+    "message": "Health check successful",
+    "timestamp": "2025-08-07T09:26:17.913917",
+    "data_sample": "{'message': 'Sports Telecast Backend API is running! \ud83c\udfdf\ufe0f\u26bd', 'status': 'healthy', 'version': '1.0.0', 'database': {'status': 'healthy', 'database': 'myapp', 'host': 'localhost', 'port': '5000', 'connect"
+  },
+  {
+    "endpoint": "GET /users/",
+    "status": "PASS",
+    "message": "Found 5 users, UUID format: True",
+    "timestamp": "2025-08-07T09:26:17.919830",
+    "data_sample": "[{'user_id': '5a7f849d-24b7-4e9e-a726-d630d08db577', 'email': 'admin@sportstelecast.com', 'username': 'admin', 'full_name': 'System Administrator', 'avatar_url': 'https://cdn.sportstelecast.com/avatar"
+  },
+  {
+    "endpoint": "POST /auth/login",
+    "status": "FAIL",
+    "message": "Status: 500, Response: {\"detail\":\"Internal server error\",\"message\":\"An unexpected error occurred\"}",
+    "timestamp": "2025-08-07T09:26:18.217890",
+    "data_sample": null
+  },
+  {
+    "endpoint": "GET /matches/",
+    "status": "FAIL",
+    "message": "Status: 500, Error: Internal server error",
+    "timestamp": "2025-08-07T09:26:18.232478",
+    "data_sample": null
+  },
+  {
+    "endpoint": "GET /matches/events/",
+    "status": "FAIL",
+    "message": "Status: 500, Error: Internal server error",
+    "timestamp": "2025-08-07T09:26:18.243219",
+    "data_sample": null
+  },
+  {
+    "endpoint": "GET /highlights/",
+    "status": "FAIL",
+    "message": "Status: 500, Error: Internal server error",
+    "timestamp": "2025-08-07T09:26:18.258874",
+    "data_sample": null
+  },
+  {
+    "endpoint": "GET /schedules/",
+    "status": "PASS",
+    "message": "Success",
+    "timestamp": "2025-08-07T09:26:18.267434",
+    "data_sample": "{'schedules': [], 'total': 0, 'page': 1, 'page_size': 30, 'date_range': None}"
+  },
+  {
+    "endpoint": "GET /profiles/",
+    "status": "PASS",
+    "message": "Success",
+    "timestamp": "2025-08-07T09:26:18.273649",
+    "data_sample": null
+  },
+  {
+    "endpoint": "GET /users/stats/overview",
+    "status": "PASS",
+    "message": "Success",
+    "timestamp": "2025-08-07T09:26:18.281719",
+    "data_sample": "{'total_users': 5, 'active_users': 5, 'inactive_users': 0, 'new_users_this_week': 5, 'users_with_profiles': 0, 'role_distribution': {'moderator': 1, 'user': 3, 'admin': 1}, 'profile_completion_rate': "
+  },
+  {
+    "endpoint": "GET /health/database",
+    "status": "PASS",
+    "message": "Success",
+    "timestamp": "2025-08-07T09:26:18.284572",
+    "data_sample": "{'timestamp': '2024-01-01T12:00:00Z', 'database': {'status': 'healthy', 'database': 'myapp', 'host': 'localhost', 'port': '5000', 'connection_pool_size': 20, 'checked_out_connections': 0}}"
+  }
+]

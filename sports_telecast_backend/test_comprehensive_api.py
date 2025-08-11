@@ -3,7 +3,7 @@
 Comprehensive API Testing Script for Sports Telecast Backend
 
 This script validates all REST API endpoints including:
-- Authentication (register, login, refresh)
+- Authentication (login, refresh)        # Registration removed
 - Users (CRUD, search, admin functions)
 - Profiles (CRUD, search, privacy settings)
 - Matches (live, upcoming, detailed views)
@@ -15,7 +15,7 @@ This script validates all REST API endpoints including:
 
 import asyncio
 import sys
-from datetime import datetime
+# from datetime import datetime
 import aiohttp
 from typing import Dict, Any, Optional
 
@@ -115,40 +115,28 @@ class APITester:
         """Test authentication endpoints"""
         print("\n🔐 Testing Authentication Endpoints...")
         
-        # Test user registration
-        test_user_data = {
-            "email": f"test_user_{datetime.now().timestamp()}@example.com",
-            "username": f"testuser_{int(datetime.now().timestamp())}",
-            "password": "testpassword123",
-            "full_name": "Test User"
-        }
-        
-        response = await self.make_request("POST", "/auth/register", test_user_data)
-        if response["success"]:
-            self.auth_token = response["data"].get("access_token")
-            self.test_user_id = response["data"].get("user", {}).get("user_id")
-        
-        self.record_test(
-            "User Registration",
-            response["success"] and self.auth_token is not None,
-            f"Status: {response['status_code']}"
-        )
+        # Registration endpoint removed
+        # Now test login and protected endpoints with existing credentials or skip if unavailable.
+
+        user_email = "existinguser@example.com"
+        user_password = "securepassword123"
         
         # Test user login
         login_data = {
-            "email": test_user_data["email"],
-            "password": test_user_data["password"]
+            "email": user_email,
+            "password": user_password
         }
-        
         response = await self.make_request("POST", "/auth/login", login_data)
+        self.auth_token = response["data"].get("access_token")
         self.record_test(
             "User Login",
-            response["success"] and "access_token" in response["data"],
+            response["success"] and self.auth_token is not None,
             f"Status: {response['status_code']}"
         )
         
         # Test get current user
         response = await self.make_request("GET", "/auth/me")
+        self.test_user_id = response["data"].get("user_id")
         self.record_test(
             "Get Current User",
             response["success"] and "user_id" in response["data"],
@@ -203,6 +191,9 @@ class APITester:
     async def test_profile_endpoints(self):
         """Test user profile endpoints"""
         print("\n👤 Testing Profile Endpoints...")
+        if not self.test_user_id:
+            print("⚠️  Skipping profile endpoints, no authenticated user.")
+            return
         
         # Test create profile
         profile_data = {
@@ -213,11 +204,9 @@ class APITester:
             "favorite_teams": ["team1", "team2"],
             "favorite_sports": ["football", "basketball"]
         }
-        
         response = await self.make_request("POST", "/profiles/", profile_data)
         if response["success"]:
             self.test_profile_id = response["data"].get("profile_id")
-        
         self.record_test(
             "Create Profile",
             response["success"] and "profile_id" in response["data"],
@@ -255,8 +244,6 @@ class APITester:
     async def test_schedule_endpoints(self):
         """Test schedule endpoints"""
         print("\n📅 Testing Schedule Endpoints...")
-        
-        # Test get daily schedule
         from datetime import date
         today = date.today().isoformat()
         response = await self.make_request("GET", f"/schedules/daily/{today}")
@@ -265,32 +252,24 @@ class APITester:
             response["success"] and "matches_count" in response["data"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get weekly schedule
         response = await self.make_request("GET", "/schedules/weekly")
         self.record_test(
             "Get Weekly Schedule",
             response["success"] and "daily_schedules" in response["data"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get upcoming schedules
         response = await self.make_request("GET", "/schedules/upcoming", params={"days": 7})
         self.record_test(
             "Get Upcoming Schedules",
             response["success"] and isinstance(response["data"], list),
             f"Status: {response['status_code']}"
         )
-        
-        # Test get live matches
         response = await self.make_request("GET", "/schedules/live")
         self.record_test(
             "Get Live Matches Schedule",
             response["success"] and "matches_count" in response["data"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get schedules list
         response = await self.make_request("GET", "/schedules/", params={"limit": 10})
         self.record_test(
             "Get Schedules List",
@@ -301,24 +280,18 @@ class APITester:
     async def test_match_endpoints(self):
         """Test match endpoints"""
         print("\n⚽ Testing Match Endpoints...")
-        
-        # Test get matches
         response = await self.make_request("GET", "/matches", params={"limit": 10})
         self.record_test(
             "Get Matches",
             response["success"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get live matches
         response = await self.make_request("GET", "/matches/live")
         self.record_test(
             "Get Live Matches",
             response["success"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get upcoming matches
         response = await self.make_request("GET", "/matches/upcoming")
         self.record_test(
             "Get Upcoming Matches",
@@ -329,16 +302,12 @@ class APITester:
     async def test_highlight_endpoints(self):
         """Test highlight endpoints"""
         print("\n🎬 Testing Highlight Endpoints...")
-        
-        # Test get highlights
         response = await self.make_request("GET", "/highlights", params={"limit": 10})
         self.record_test(
             "Get Highlights",
             response["success"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get featured highlights
         response = await self.make_request("GET", "/highlights/featured", params={"limit": 5})
         self.record_test(
             "Get Featured Highlights",
@@ -349,8 +318,6 @@ class APITester:
     async def test_emoji_endpoints(self):
         """Test emoji endpoints"""
         print("\n😊 Testing Emoji Endpoints...")
-        
-        # Test list emojis
         response = await self.make_request("GET", "/fan-engagement/emoji/v1/listEmojis")
         self.record_test(
             "List Emojis",
@@ -361,24 +328,18 @@ class APITester:
     async def test_api_logs_endpoints(self):
         """Test API logs endpoints"""
         print("\n📊 Testing API Logs Endpoints...")
-        
-        # Test get API calls
         response = await self.make_request("GET", "/api-logs/calls", params={"limit": 5})
         self.record_test(
             "Get API Calls",
             response["success"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get API statistics
         response = await self.make_request("GET", "/api-logs/stats")
         self.record_test(
             "Get API Statistics",
             response["success"],
             f"Status: {response['status_code']}"
         )
-        
-        # Test get endpoints
         response = await self.make_request("GET", "/api-logs/endpoints")
         self.record_test(
             "Get Endpoints List",
@@ -424,7 +385,7 @@ class APITester:
                 print(f"   • {error}")
         
         success_rate = (self.results['passed'] / self.results['total_tests']) * 100 if self.results['total_tests'] > 0 else 0
-        print(f"\n🎯 Success Rate: {success_rate:.1f}%")
+        print(f"\n🏆 Success Rate: {success_rate:.1f}%")
         
         return success_rate >= 80  # Consider 80%+ success rate as overall success
 

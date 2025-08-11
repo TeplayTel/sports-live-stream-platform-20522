@@ -31,16 +31,9 @@ uvicorn==0.34.0
 uvloop==0.21.0
 watchfiles==1.0.5
 websockets==15.0.1
-# Database dependencies
-psycopg2-binary==2.9.10
-sqlalchemy==2.0.42
-alembic==1.16.4
-=======
-bcrypt==4.1.2
-python-multipart==0.0.6
-websockets==12.0
-pytest==7.4.3
-pytest-asyncio==0.21.1
-httpx==0.25.2
-python-dotenv==1.0.0
->>>>>>> cga-cg908b179b
+sqlalchemy[asyncio]==2.0.23
+asyncpg==0.29.0
+alembic==1.13.1
+
+# PostgreSQL database driver - required for Django and SQLAlchemy with PostgreSQL
+psycopg2-binary>=2.9.0  # Binary version, easier installation for local/dev. Production can use psycopg2 if source build is preferred.

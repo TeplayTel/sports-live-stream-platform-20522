@@ -1,0 +1,143 @@
+import os
+import uuid
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Header
+from pydantic import BaseModel, Field
+from sqlalchemy import create_engine, Column, String, DateTime
+from sqlalchemy.orm import sessionmaker, declarative_base
+from datetime import datetime
+from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env for storage path (if running locally)
+load_dotenv()
+
+# PUBLIC_INTERFACE
+def get_storage_dir():
+    """Returns the directory path for storing emoji assets, from .env or config."""
+    return os.getenv("EMOJI_ASSETS_DIR", "emoji_assets")
+
+# PUBLIC_INTERFACE
+def get_cdn_base_url():
+    """Returns the base CDN URL for constructing emoji image URLs."""
+    return os.getenv("EMOJI_CDN_BASE_URL", "https://cdn.placeholderdomain.com/emojis/")
+
+# Database setup (reuse FastAPI settings if available)
+DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./test.db") # fallback for local setup/demo
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class EmojiAsset(Base):
+    __tablename__ = "emoji_assets"
+    emoji_id = Column(String(36), primary_key=True, index=True)
+    emoji_type = Column(String(32), nullable=False)
+    file_location = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# Create the table if it does not exist
+Base.metadata.create_all(bind=engine)
+
+# Response schemas
+class EmojiAssetResponseModel(BaseModel):
+    emoji_id: str = Field(..., description="Unique emoji identifier")
+    emoji_type: str = Field(..., description="Emoji type/category (e.g. clap)")
+    image_url: str = Field(..., description="URL to the uploaded emoji image")
+
+class UploadEmojiResponse(BaseModel):
+    status: str = Field(..., description="Response status")
+    message: str = Field(..., description="Operation outcome")
+    emoji: EmojiAssetResponseModel
+
+router = APIRouter()
+
+# PUBLIC_INTERFACE
+@router.post(
+    "/fan-engagement/emoji/v1/upload",
+    summary="Upload a new emoji asset for user reactions",
+    description="Upload an emoji image (admin only for now), store file, register in DB, and return details.",
+    response_model=UploadEmojiResponse,
+    tags=["Fan Engagement - Emojis"]
+)
+async def upload_emoji(
+    emojiType: str = Form(..., description="Type/category of the emoji (e.g. clap, fire)"),
+    emojiImage: UploadFile = File(..., description="Emoji image file (PNG preferred)"),
+    authorization: Optional[str] = Header(None, description="Bearer admin token"),
+):
+    """
+    Uploads a new emoji asset to the platform (admin only for MVP).
+
+    - Validates and saves the emoji image.
+    - Inserts a new record into emoji_assets.
+    - Returns emoji asset details.
+
+    Future: Replace hardcoded admin token check with JWT/role-based auth.
+
+    Request (multipart/form-data):
+      - emojiType: string
+      - emojiImage: file (binary)
+    Headers:
+      - Authorization: Bearer <admin-token>
+    """
+    # Placeholder admin check (replace with JWT roles in future)
+    admin_token = os.getenv("ADMIN_UPLOAD_TOKEN", "admin")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid authorization header")
+    token_value = authorization.split(" ", 1)[1]
+    if token_value != admin_token:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient privileges")
+
+    # Validate emojiType (optional: match to allowed values)
+    if not emojiType.isidentifier() or len(emojiType) > 32:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid emojiType")
+
+    # Save image to storage directory (ensure directory exists)
+    storage_dir = get_storage_dir()
+    os.makedirs(storage_dir, exist_ok=True)
+    ext = os.path.splitext(emojiImage.filename or "")[1].lower()
+    if ext not in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type")
+    emoji_id = str(uuid.uuid4())
+    file_name = f"{emoji_id}{ext}"
+    file_path = os.path.join(storage_dir, file_name)
+
+    with open(file_path, "wb") as out_file:
+        while content := await emojiImage.read(4096):
+            out_file.write(content)
+
+    # Insert into DB
+    db = SessionLocal()
+    try:
+        asset = EmojiAsset(
+            emoji_id=emoji_id,
+            emoji_type=emojiType,
+            file_location=file_path
+        )
+        db.add(asset)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # Rollback file save if DB insert fails
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Failed to save emoji asset: {str(e)}")
+    finally:
+        db.close()
+
+    # Generate the public image URL (actual CDN should proxy or serve assets)
+    cdn_base = get_cdn_base_url()
+    image_url = f"{cdn_base.rstrip('/')}/{file_name}"
+
+    return UploadEmojiResponse(
+        status="SUCCESS",
+        message="Emoji uploaded successfully",
+        emoji=EmojiAssetResponseModel(
+            emoji_id=emoji_id,
+            emoji_type=emojiType,
+            image_url=image_url
+        )
+    )
+
+# Instructions for mounting this router
+# in src/api/emoji.py or main.py:
+#    from .emoji_upload import router as upload_router
+#    app.include_router(upload_router)

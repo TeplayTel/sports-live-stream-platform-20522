@@ -29,6 +29,71 @@ from src.database.models import (
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # PUBLIC_INTERFACE
+def generate_uuid_mappings():
+    """
+    Generate UUID mappings for all entities to ensure consistent UUID usage across seeding functions
+    
+    Returns:
+        dict: Dictionary containing UUID mappings for all entities
+    """
+    return {
+        'emojis': {
+            'EMJ103': uuid.uuid4(),
+            'EMJ104': uuid.uuid4(), 
+            'EMJ105': uuid.uuid4(),
+            'EMJ106': uuid.uuid4(),
+            'EMJ107': uuid.uuid4(),
+            'EMJ108': uuid.uuid4(),
+            'EMJ109': uuid.uuid4(),
+            'EMJ110': uuid.uuid4(),
+        },
+        'teams': {
+            'TEAM001': uuid.uuid4(),
+            'TEAM002': uuid.uuid4(), 
+            'TEAM003': uuid.uuid4(),
+            'TEAM004': uuid.uuid4(),
+            'TEAM005': uuid.uuid4(),
+            'TEAM006': uuid.uuid4(),
+            'TEAM007': uuid.uuid4(),
+            'TEAM008': uuid.uuid4(),
+        },
+        'events': {
+            'EVT123': uuid.uuid4(),
+            'EVT124': uuid.uuid4(),
+            'EVT125': uuid.uuid4(),
+        },
+        'matches': {
+            'MATCH001': uuid.uuid4(),
+            'MATCH002': uuid.uuid4(), 
+            'MATCH003': uuid.uuid4(),
+            'MATCH004': uuid.uuid4(),
+            'MATCH005': uuid.uuid4(),
+            'MATCH006': uuid.uuid4(),
+            'MATCH007': uuid.uuid4(),
+            'MATCH008': uuid.uuid4(),
+            'MATCH009': uuid.uuid4(),
+            'MATCH010': uuid.uuid4(),
+            'MATCH011': uuid.uuid4(),
+            'MATCH012': uuid.uuid4(),
+        },
+        'highlights': {
+            'HIGH001': uuid.uuid4(),
+            'HIGH002': uuid.uuid4(),
+            'HIGH003': uuid.uuid4(),
+            'HIGH004': uuid.uuid4(),
+            'HIGH005': uuid.uuid4(),
+            'HIGH006': uuid.uuid4(),
+        },
+        'users': {
+            'admin': uuid.uuid4(),
+            'johndoe': uuid.uuid4(),
+            'sarahw': uuid.uuid4(),
+            'mikeb': uuid.uuid4(),
+            'emmag': uuid.uuid4(),
+        }
+    }
+
+# PUBLIC_INTERFACE
 async def seed_database():
     """
     Seed the database with initial sample data
@@ -49,34 +114,37 @@ async def seed_database():
             print(f"⚠️ Could not check existing data: {e}")
             print("Proceeding with seeding...")
         
+        # Generate UUID mappings for all entities
+        uuid_mappings = generate_uuid_mappings()
+        
         # Seed emoji assets first
-        emojis, emoji_uuids = await seed_emojis(session)
+        await seed_emojis(session, uuid_mappings)
         
         # Seed teams
-        teams, team_uuids = await seed_teams(session)
+        await seed_teams(session, uuid_mappings)
         
         # Seed events
-        events, event_uuids = await seed_events(session)
+        await seed_events(session, uuid_mappings)
         
         # Seed matches
-        matches, match_uuids = await seed_matches(session, teams, events, team_uuids, event_uuids)
+        await seed_matches(session, uuid_mappings)
         
         # Seed users
-        users = await seed_users(session)
+        await seed_users(session, uuid_mappings)
         
         # Seed match events
-        await seed_match_events(session, matches, teams, match_uuids, team_uuids)
+        await seed_match_events(session, uuid_mappings)
         
         # Seed highlights
-        await seed_highlights(session, match_uuids)
+        await seed_highlights(session, uuid_mappings)
         
         # Seed user emoji reactions
-        await seed_user_emoji_reactions(session, users, emojis, emoji_uuids)
+        await seed_user_emoji_reactions(session, uuid_mappings)
         
         print("✅ Database seeding completed successfully!")
 
-async def seed_emojis(session: AsyncSession):
-    """Seed emoji assets"""
+async def seed_emojis(session: AsyncSession, uuid_mappings: dict):
+    """Seed emoji assets using UUID mappings"""
     print("📱 Seeding emoji assets...")
     
     # Generate proper UUIDs for emojis
@@ -93,6 +161,7 @@ async def seed_emojis(session: AsyncSession):
     
     emojis_data = [
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ103'],
             "emoji_type": EmojiTypeEnum.CLAP,
             "image_url": "https://cdn.mydomain.com/emojis/clap.png",
             "name": "Clap",
@@ -100,6 +169,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 1
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ104'], 
             "emoji_type": EmojiTypeEnum.FIRE,
             "image_url": "https://cdn.mydomain.com/emojis/fire.png",
             "name": "Fire",
@@ -107,6 +177,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 2
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ105'],
             "emoji_type": EmojiTypeEnum.HEART,
             "image_url": "https://cdn.mydomain.com/emojis/heart.png", 
             "name": "Love",
@@ -114,6 +185,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 3
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ106'],
             "emoji_type": EmojiTypeEnum.THUMBS_UP,
             "image_url": "https://cdn.mydomain.com/emojis/thumbs_up.png",
             "name": "Thumbs Up", 
@@ -121,6 +193,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 4
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ107'],
             "emoji_type": EmojiTypeEnum.GOAL,
             "image_url": "https://cdn.mydomain.com/emojis/goal.png",
             "name": "Goal",
@@ -128,6 +201,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 5
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ108'],
             "emoji_type": EmojiTypeEnum.CELEBRATION,
             "image_url": "https://cdn.mydomain.com/emojis/celebration.png",
             "name": "Celebration",
@@ -135,6 +209,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 6
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ109'],
             "emoji_type": EmojiTypeEnum.SHOCKED,
             "image_url": "https://cdn.mydomain.com/emojis/shocked.png",
             "name": "Shocked",
@@ -142,6 +217,7 @@ async def seed_emojis(session: AsyncSession):
             "sort_order": 7
         },
         {
+            "emoji_id": uuid_mappings['emojis']['EMJ110'],
             "emoji_type": EmojiTypeEnum.LAUGH,
             "image_url": "https://cdn.mydomain.com/emojis/laugh.png",
             "name": "Laugh",
@@ -156,14 +232,16 @@ async def seed_emojis(session: AsyncSession):
         emoji_key = emoji_keys[i]
         emoji = EmojiAssetDB(emoji_id=emoji_uuids[emoji_key], **emoji_data)
         session.add(emoji)
-        emojis[emoji_key] = emoji
+        # Map using original string keys for backward compatibility
+        reverse_key = next(k for k, v in uuid_mappings['emojis'].items() if v == emoji_data["emoji_id"])
+        emojis[reverse_key] = emoji
     
     await session.commit()
     print(f"   ✅ Added {len(emojis_data)} emoji assets")
     return emojis, emoji_uuids
 
-async def seed_teams(session: AsyncSession):
-    """Seed teams"""
+async def seed_teams(session: AsyncSession, uuid_mappings: dict):
+    """Seed teams using UUID mappings"""
     print("🏟️ Seeding teams...")
     
     # Generate proper UUIDs for teams
@@ -180,48 +258,56 @@ async def seed_teams(session: AsyncSession):
     
     teams_data = [
         {
+            "team_id": uuid_mappings['teams']['TEAM001'],
             "name": "Arsenal FC",
             "short_name": "ARS",
             "logo_url": "https://cdn.example.com/logos/arsenal.png",
             "colors": {"primary": "#DC143C", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM002'], 
             "name": "Chelsea FC",
             "short_name": "CHE",
             "logo_url": "https://cdn.example.com/logos/chelsea.png",
             "colors": {"primary": "#034694", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM003'],
             "name": "Manchester United",
             "short_name": "MUN",
             "logo_url": "https://cdn.example.com/logos/manchester_united.png",
             "colors": {"primary": "#FF0000", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM004'],
             "name": "Liverpool FC",
             "short_name": "LIV",
             "logo_url": "https://cdn.example.com/logos/liverpool.png",
             "colors": {"primary": "#C8102E", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM005'],
             "name": "Manchester City",
             "short_name": "MCI",
             "logo_url": "https://cdn.example.com/logos/manchester_city.png",
             "colors": {"primary": "#6CABDD", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM006'],
             "name": "Tottenham Hotspur",
             "short_name": "TOT",
             "logo_url": "https://cdn.example.com/logos/tottenham.png",
             "colors": {"primary": "#132257", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM007'],
             "name": "Newcastle United",
             "short_name": "NEW",
             "logo_url": "https://cdn.example.com/logos/newcastle.png",
             "colors": {"primary": "#000000", "secondary": "#FFFFFF"}
         },
         {
+            "team_id": uuid_mappings['teams']['TEAM008'],
             "name": "Brighton & Hove Albion",
             "short_name": "BHA",
             "logo_url": "https://cdn.example.com/logos/brighton.png",
@@ -235,14 +321,16 @@ async def seed_teams(session: AsyncSession):
         team_key = team_keys[i]
         team = TeamDB(team_id=team_uuids[team_key], **team_data)
         session.add(team)
-        teams[team_key] = team
+        # Map using original string keys for backward compatibility
+        reverse_key = next(k for k, v in uuid_mappings['teams'].items() if v == team_data["team_id"])
+        teams[reverse_key] = team
     
     await session.commit()
     print(f"   ✅ Added {len(teams_data)} teams")
     return teams, team_uuids
 
-async def seed_events(session: AsyncSession):
-    """Seed events"""
+async def seed_events(session: AsyncSession, uuid_mappings: dict):
+    """Seed events using UUID mappings"""
     print("🏆 Seeding events...")
     
     # Generate proper UUIDs for events
@@ -254,6 +342,7 @@ async def seed_events(session: AsyncSession):
     
     events_data = [
         {
+            "event_id": uuid_mappings['events']['EVT123'],
             "name": "Premier League 2024-25",
             "description": "English Premier League Season 2024-25",
             "sport_type": SportTypeEnum.FOOTBALL,
@@ -266,6 +355,7 @@ async def seed_events(session: AsyncSession):
             "is_featured": True
         },
         {
+            "event_id": uuid_mappings['events']['EVT124'],
             "name": "Champions League 2024-25",
             "description": "UEFA Champions League Season 2024-25",
             "sport_type": SportTypeEnum.FOOTBALL,
@@ -278,6 +368,7 @@ async def seed_events(session: AsyncSession):
             "is_featured": True
         },
         {
+            "event_id": uuid_mappings['events']['EVT125'],
             "name": "FA Cup 2024-25",
             "description": "The Football Association Challenge Cup",
             "sport_type": SportTypeEnum.FOOTBALL,
@@ -297,14 +388,16 @@ async def seed_events(session: AsyncSession):
         event_key = event_keys[i]
         event = EventDB(event_id=event_uuids[event_key], **event_data)
         session.add(event)
-        events[event_key] = event
+        # Map using original string keys for backward compatibility
+        reverse_key = next(k for k, v in uuid_mappings['events'].items() if v == event_data["event_id"])
+        events[reverse_key] = event
     
     await session.commit()
     print(f"   ✅ Added {len(events_data)} events")
     return events, event_uuids
 
-async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uuids: dict, event_uuids: dict):
-    """Seed matches"""
+async def seed_matches(session: AsyncSession, uuid_mappings: dict):
+    """Seed matches using UUID mappings"""
     print("⚽ Seeding matches...")
     
     # Generate proper UUIDs for matches
@@ -325,9 +418,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
     
     matches_data = [
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM001"],
-            "away_team_id": team_uuids["TEAM002"],
+            "match_id": uuid_mappings['matches']['MATCH001'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM001'],
+            "away_team_id": uuid_mappings['teams']['TEAM002'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.LIVE,
             "home_score": 2,
@@ -344,9 +438,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             }
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM003"],
-            "away_team_id": team_uuids["TEAM004"],
+            "match_id": uuid_mappings['matches']['MATCH002'], 
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM003'],
+            "away_team_id": uuid_mappings['teams']['TEAM004'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.SCHEDULED,
             "home_score": 0,
@@ -358,9 +453,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             "stream_url": "https://stream.example.com/match002"
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM001"],
-            "away_team_id": team_uuids["TEAM004"],
+            "match_id": uuid_mappings['matches']['MATCH003'],
+            "event_id": uuid_mappings['events']['EVT123'], 
+            "home_team_id": uuid_mappings['teams']['TEAM001'],
+            "away_team_id": uuid_mappings['teams']['TEAM004'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.FINISHED,
             "home_score": 3,
@@ -379,9 +475,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             }
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM005"],
-            "away_team_id": team_uuids["TEAM006"],
+            "match_id": uuid_mappings['matches']['MATCH004'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM005'],
+            "away_team_id": uuid_mappings['teams']['TEAM006'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.SCHEDULED,
             "home_score": 0,
@@ -392,9 +489,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             "round": "Matchday 16"
         },
         {
-            "event_id": event_uuids["EVT124"],
-            "home_team_id": team_uuids["TEAM002"],
-            "away_team_id": team_uuids["TEAM005"],
+            "match_id": uuid_mappings['matches']['MATCH005'],
+            "event_id": uuid_mappings['events']['EVT124'],
+            "home_team_id": uuid_mappings['teams']['TEAM002'],
+            "away_team_id": uuid_mappings['teams']['TEAM005'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.FINISHED,
             "home_score": 1,
@@ -406,9 +504,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             "round": "Group Stage"
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM007"],
-            "away_team_id": team_uuids["TEAM008"],
+            "match_id": uuid_mappings['matches']['MATCH006'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM007'],
+            "away_team_id": uuid_mappings['teams']['TEAM008'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.FINISHED,
             "home_score": 2,
@@ -421,9 +520,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
         },
         # Additional matches for "more matches" feature
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM004"],
-            "away_team_id": team_uuids["TEAM005"],
+            "match_id": uuid_mappings['matches']['MATCH007'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM004'],
+            "away_team_id": uuid_mappings['teams']['TEAM005'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.LIVE,
             "home_score": 1,
@@ -440,9 +540,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             }
         },
         {
-            "event_id": event_uuids["EVT125"],
-            "home_team_id": team_uuids["TEAM001"],
-            "away_team_id": team_uuids["TEAM006"],
+            "match_id": uuid_mappings['matches']['MATCH008'],
+            "event_id": uuid_mappings['events']['EVT125'],
+            "home_team_id": uuid_mappings['teams']['TEAM001'],
+            "away_team_id": uuid_mappings['teams']['TEAM006'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.FINISHED,
             "home_score": 3,
@@ -459,9 +560,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             }
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM002"],
-            "away_team_id": team_uuids["TEAM007"],
+            "match_id": uuid_mappings['matches']['MATCH009'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM002'],
+            "away_team_id": uuid_mappings['teams']['TEAM007'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.SCHEDULED,
             "home_score": 0,
@@ -472,9 +574,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             "round": "Matchday 16"
         },
         {
-            "event_id": event_uuids["EVT124"],
-            "home_team_id": team_uuids["TEAM003"],
-            "away_team_id": team_uuids["TEAM001"],
+            "match_id": uuid_mappings['matches']['MATCH010'],
+            "event_id": uuid_mappings['events']['EVT124'],
+            "home_team_id": uuid_mappings['teams']['TEAM003'],
+            "away_team_id": uuid_mappings['teams']['TEAM001'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.SCHEDULED,
             "home_score": 0,
@@ -485,9 +588,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             "round": "Round of 16"
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM008"],
-            "away_team_id": team_uuids["TEAM003"],
+            "match_id": uuid_mappings['matches']['MATCH011'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM008'],
+            "away_team_id": uuid_mappings['teams']['TEAM003'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.FINISHED,
             "home_score": 1,
@@ -504,9 +608,10 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
             }
         },
         {
-            "event_id": event_uuids["EVT123"],
-            "home_team_id": team_uuids["TEAM006"],
-            "away_team_id": team_uuids["TEAM004"],
+            "match_id": uuid_mappings['matches']['MATCH012'],
+            "event_id": uuid_mappings['events']['EVT123'],
+            "home_team_id": uuid_mappings['teams']['TEAM006'],
+            "away_team_id": uuid_mappings['teams']['TEAM004'],
             "sport_type": SportTypeEnum.FOOTBALL,
             "status": MatchStatusEnum.SCHEDULED,
             "home_score": 0,
@@ -524,19 +629,21 @@ async def seed_matches(session: AsyncSession, teams: dict, events: dict, team_uu
         match_key = match_keys[i]
         match = MatchDB(match_id=match_uuids[match_key], **match_data)
         session.add(match)
-        matches[match_key] = match
+        # Map using original string keys for backward compatibility
+        reverse_key = next(k for k, v in uuid_mappings['matches'].items() if v == match_data["match_id"])
+        matches[reverse_key] = match
     
     await session.commit()
     print(f"   ✅ Added {len(matches_data)} matches")
     return matches, match_uuids
 
-async def seed_users(session: AsyncSession):
-    """Seed sample users"""
+async def seed_users(session: AsyncSession, uuid_mappings: dict):
+    """Seed sample users using UUID mappings"""
     print("👤 Seeding users...")
     
     users_data = [
         {
-            "user_id": str(uuid.uuid4()),
+            "user_id": uuid_mappings['users']['admin'],
             "email": "admin@sportstelecast.com",
             "username": "admin",
             "password_hash": pwd_context.hash("admin123"),
@@ -553,7 +660,7 @@ async def seed_users(session: AsyncSession):
             }
         },
         {
-            "user_id": str(uuid.uuid4()),
+            "user_id": uuid_mappings['users']['johndoe'],
             "email": "john.doe@example.com",
             "username": "johndoe",
             "password_hash": pwd_context.hash("password123"),
@@ -570,7 +677,7 @@ async def seed_users(session: AsyncSession):
             }
         },
         {
-            "user_id": str(uuid.uuid4()),
+            "user_id": uuid_mappings['users']['sarahw'],
             "email": "sarah.wilson@example.com",
             "username": "sarahw",
             "password_hash": pwd_context.hash("sarah123"),
@@ -587,7 +694,7 @@ async def seed_users(session: AsyncSession):
             }
         },
         {
-            "user_id": str(uuid.uuid4()),
+            "user_id": uuid_mappings['users']['mikeb'],
             "email": "mike.brown@example.com",
             "username": "mikeb",
             "password_hash": pwd_context.hash("mike123"),
@@ -604,7 +711,7 @@ async def seed_users(session: AsyncSession):
             }
         },
         {
-            "user_id": str(uuid.uuid4()),
+            "user_id": uuid_mappings['users']['emmag'],
             "email": "emma.garcia@example.com",
             "username": "emmag",
             "password_hash": pwd_context.hash("emma123"),
@@ -632,143 +739,159 @@ async def seed_users(session: AsyncSession):
     print(f"   ✅ Added {len(users_data)} users")
     return users
 
-async def seed_match_events(session: AsyncSession, matches: dict, teams: dict, match_uuids: dict, team_uuids: dict):
-    """Seed match events (goals, cards, substitutions, etc.)"""
+async def seed_match_events(session: AsyncSession, uuid_mappings: dict):
+    """Seed match events (goals, cards, substitutions, etc.) using UUID mappings"""
     print("📊 Seeding match events...")
     
     match_events_data = [
         # Events for MATCH001 (Arsenal vs Chelsea - Live)
         {
-            "match_id": match_uuids["MATCH001"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH001'],
             "event_type": "goal",
             "minute": 15,
-            "team_id": team_uuids["TEAM001"],
+            "team_id": uuid_mappings['teams']['TEAM001'],
             "player_name": "Gabriel Jesus",
             "description": "Goal! Arsenal takes the lead with a brilliant strike from Gabriel Jesus"
         },
         {
-            "match_id": match_uuids["MATCH001"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH001'],
             "event_type": "yellow_card",
             "minute": 23,
-            "team_id": team_uuids["TEAM002"],
+            "team_id": uuid_mappings['teams']['TEAM002'],
             "player_name": "Enzo Fernandez",
             "description": "Yellow card for Enzo Fernandez for a tactical foul"
         },
         {
-            "match_id": match_uuids["MATCH001"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH001'],
             "event_type": "goal",
             "minute": 34,
-            "team_id": team_uuids["TEAM002"],
+            "team_id": uuid_mappings['teams']['TEAM002'],
             "player_name": "Nicolas Jackson",
             "description": "Goal! Chelsea equalizes through Nicolas Jackson"
         },
         {
-            "match_id": match_uuids["MATCH001"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH001'],
             "event_type": "goal",
             "minute": 67,
-            "team_id": team_uuids["TEAM001"],
+            "team_id": uuid_mappings['teams']['TEAM001'],
             "player_name": "Martin Odegaard",
             "description": "Goal! Arsenal retakes the lead with a penalty by Martin Odegaard"
         },
         
         # Events for MATCH003 (Arsenal vs Liverpool - Finished)
         {
-            "match_id": match_uuids["MATCH003"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "event_type": "goal",
             "minute": 12,
-            "team_id": team_uuids["TEAM001"],
+            "team_id": uuid_mappings['teams']['TEAM001'],
             "player_name": "Bukayo Saka",
             "description": "Goal! Early opener from Bukayo Saka"
         },
         {
-            "match_id": match_uuids["MATCH003"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "event_type": "goal",
             "minute": 28,
-            "team_id": team_uuids["TEAM004"],
+            "team_id": uuid_mappings['teams']['TEAM004'],
             "player_name": "Mohamed Salah",
             "description": "Goal! Liverpool responds with Mohamed Salah"
         },
         {
-            "match_id": match_uuids["MATCH003"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "event_type": "goal", 
             "minute": 45,
-            "team_id": team_uuids["TEAM001"],
+            "team_id": uuid_mappings['teams']['TEAM001'],
             "player_name": "Gabriel Jesus",
             "description": "Goal! Arsenal leads 2-1 at halftime"
         },
         {
-            "match_id": match_uuids["MATCH003"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "event_type": "substitution",
             "minute": 56,
-            "team_id": team_uuids["TEAM004"],
+            "team_id": uuid_mappings['teams']['TEAM004'],
             "player_name": "Darwin Nunez (in) / Diogo Jota (out)",
             "description": "Substitution: Darwin Nunez replaces Diogo Jota"
         },
         {
-            "match_id": match_uuids["MATCH003"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "event_type": "goal",
             "minute": 73,
-            "team_id": team_uuids["TEAM004"],
+            "team_id": uuid_mappings['teams']['TEAM004'],
             "player_name": "Darwin Nunez",
             "description": "Goal! Darwin Nunez equalizes for Liverpool"
         },
         {
-            "match_id": match_uuids["MATCH003"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "event_type": "goal",
             "minute": 89,
-            "team_id": team_uuids["TEAM001"],
+            "team_id": uuid_mappings['teams']['TEAM001'],
             "player_name": "Martin Odegaard",
             "description": "Goal! Late winner from Martin Odegaard seals the victory"
         },
         
         # Events for MATCH005 (Chelsea vs Man City - Finished)
         {
-            "match_id": match_uuids["MATCH005"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH005'],
             "event_type": "goal",
             "minute": 31,
-            "team_id": team_uuids["TEAM002"],
+            "team_id": uuid_mappings['teams']['TEAM002'],
             "player_name": "Raheem Sterling",
             "description": "Goal! Raheem Sterling scores the only goal of the match"
         },
         {
-            "match_id": match_uuids["MATCH005"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH005'],
             "event_type": "red_card",
             "minute": 78,
-            "team_id": team_uuids["TEAM005"],
+            "team_id": uuid_mappings['teams']['TEAM005'],
             "player_name": "Rodri",
             "description": "Red card! Rodri is sent off for a second yellow card"
         },
         
         # Events for MATCH006 (Newcastle vs Brighton - Finished)
         {
-            "match_id": match_uuids["MATCH006"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH006'],
             "event_type": "goal",
             "minute": 22,
-            "team_id": team_uuids["TEAM007"],
+            "team_id": uuid_mappings['teams']['TEAM007'],
             "player_name": "Alexander Isak",
             "description": "Goal! Newcastle takes the lead through Alexander Isak"
         },
         {
-            "match_id": match_uuids["MATCH006"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH006'],
             "event_type": "goal",
             "minute": 38,
-            "team_id": team_uuids["TEAM008"],
+            "team_id": uuid_mappings['teams']['TEAM008'],
             "player_name": "Evan Ferguson",
             "description": "Goal! Brighton equalizes with Evan Ferguson"
         },
         {
-            "match_id": match_uuids["MATCH006"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH006'],
             "event_type": "goal",
             "minute": 55,
-            "team_id": team_uuids["TEAM007"],
+            "team_id": uuid_mappings['teams']['TEAM007'],
             "player_name": "Callum Wilson",
             "description": "Goal! Newcastle retakes the lead"
         },
         {
-            "match_id": match_uuids["MATCH006"],
+            "event_id": uuid.uuid4(),
+            "match_id": uuid_mappings['matches']['MATCH006'],
             "event_type": "goal",
             "minute": 82,
-            "team_id": team_uuids["TEAM008"],
+            "team_id": uuid_mappings['teams']['TEAM008'],
             "player_name": "Danny Welbeck",
             "description": "Goal! Late equalizer from Danny Welbeck"
         }
@@ -781,13 +904,14 @@ async def seed_match_events(session: AsyncSession, matches: dict, teams: dict, m
     await session.commit()
     print(f"   ✅ Added {len(match_events_data)} match events")
 
-async def seed_highlights(session: AsyncSession, match_uuids: dict):
-    """Seed highlights"""
+async def seed_highlights(session: AsyncSession, uuid_mappings: dict):
+    """Seed highlights using UUID mappings"""
     print("🎬 Seeding highlights...")
     
     highlights_data = [
         {
-            "match_id": match_uuids["MATCH003"],
+            "highlight_id": uuid_mappings['highlights']['HIGH001'],
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "title": "Arsenal vs Liverpool - All Goals & Highlights",
             "description": "Watch all the goals and best moments from this thrilling 3-2 victory",
             "video_url": "https://cdn.example.com/highlights/match003.mp4",
@@ -797,7 +921,8 @@ async def seed_highlights(session: AsyncSession, match_uuids: dict):
             "view_count": 15420
         },
         {
-            "match_id": match_uuids["MATCH001"],
+            "highlight_id": uuid_mappings['highlights']['HIGH002'],
+            "match_id": uuid_mappings['matches']['MATCH001'],
             "title": "Arsenal vs Chelsea - Live Match Highlights",
             "description": "Best moments from the ongoing match",
             "video_url": "https://cdn.example.com/highlights/match001.mp4", 
@@ -807,7 +932,8 @@ async def seed_highlights(session: AsyncSession, match_uuids: dict):
             "view_count": 8934
         },
         {
-            "match_id": match_uuids["MATCH003"],
+            "highlight_id": uuid_mappings['highlights']['HIGH003'],
+            "match_id": uuid_mappings['matches']['MATCH003'],
             "title": "Martin Odegaard's Winning Goal - Arsenal vs Liverpool",
             "description": "The decisive goal that sealed Arsenal's victory in the 89th minute",
             "video_url": "https://cdn.example.com/highlights/goal_match003.mp4",
@@ -817,7 +943,8 @@ async def seed_highlights(session: AsyncSession, match_uuids: dict):
             "view_count": 25000
         },
         {
-            "match_id": match_uuids["MATCH005"],
+            "highlight_id": uuid_mappings['highlights']['HIGH004'],
+            "match_id": uuid_mappings['matches']['MATCH005'],
             "title": "Chelsea vs Man City - Champions League Highlights",
             "description": "Sterling's goal secures victory for Chelsea in the Champions League",
             "video_url": "https://cdn.example.com/highlights/match005.mp4",
@@ -827,7 +954,8 @@ async def seed_highlights(session: AsyncSession, match_uuids: dict):
             "view_count": 12750
         },
         {
-            "match_id": match_uuids["MATCH006"],
+            "highlight_id": uuid_mappings['highlights']['HIGH005'],
+            "match_id": uuid_mappings['matches']['MATCH006'],
             "title": "Newcastle vs Brighton - Thrilling 2-2 Draw",
             "description": "Four goals in an entertaining draw at St. James' Park",
             "video_url": "https://cdn.example.com/highlights/match006.mp4",
@@ -837,7 +965,8 @@ async def seed_highlights(session: AsyncSession, match_uuids: dict):
             "view_count": 9200
         },
         {
-            "match_id": match_uuids["MATCH001"],
+            "highlight_id": uuid_mappings['highlights']['HIGH006'],
+            "match_id": uuid_mappings['matches']['MATCH001'],
             "title": "Gabriel Jesus Goal - Arsenal vs Chelsea",
             "description": "Arsenal's opening goal in the live match",
             "video_url": "https://cdn.example.com/highlights/jesus_goal.mp4",
@@ -855,8 +984,8 @@ async def seed_highlights(session: AsyncSession, match_uuids: dict):
     await session.commit()
     print(f"   ✅ Added {len(highlights_data)} highlights")
 
-async def seed_user_emoji_reactions(session: AsyncSession, users: dict, emojis: dict, emoji_uuids: dict):
-    """Seed user emoji reactions to match events"""
+async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
+    """Seed user emoji reactions to match events using UUID mappings"""
     print("😍 Seeding user emoji reactions...")
     
     # Create realistic emoji reactions for various match events
@@ -898,7 +1027,7 @@ async def seed_user_emoji_reactions(session: AsyncSession, users: dict, emojis: 
         {"event": "MATCH006_GOAL_82", "popular_emojis": ["EMJ107", "EMJ109", "EMJ108"]},
     ])
     
-    user_list = list(users.keys())
+    user_list = list(uuid_mappings['users'].keys())
     
     for match_event in match_events:
         # Each event gets reactions from multiple users
@@ -908,22 +1037,24 @@ async def seed_user_emoji_reactions(session: AsyncSession, users: dict, emojis: 
             emoji_key = random.choice(match_event["popular_emojis"])
             
             reaction_data = {
-                "user_id": users[user_key].user_id,
+                "reaction_id": uuid.uuid4(),
+                "user_id": uuid_mappings['users'][user_key],
                 "event_id": match_event["event"],
-                "emoji_id": emoji_uuid_mapping[emoji_key]
+                "emoji_id": uuid_mappings['emojis'][emoji_key]
             }
             reactions_data.append(reaction_data)
     
     # Add some additional random reactions to general events
     for _ in range(50):
         user_key = random.choice(user_list)
-        emoji_key = random.choice(list(emoji_uuid_mapping.keys()))
+        emoji_key = random.choice(list(uuid_mappings['emojis'].keys()))
         event_id = f"GENERAL_EVENT_{random.randint(1000, 9999)}"
         
         reaction_data = {
-            "user_id": users[user_key].user_id,
+            "reaction_id": uuid.uuid4(),
+            "user_id": uuid_mappings['users'][user_key],
             "event_id": event_id,
-            "emoji_id": emoji_uuid_mapping[emoji_key]
+            "emoji_id": uuid_mappings['emojis'][emoji_key]
         }
         reactions_data.append(reaction_data)
     

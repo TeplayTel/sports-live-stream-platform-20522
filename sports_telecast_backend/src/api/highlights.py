@@ -5,7 +5,7 @@ from ..models.match import Highlight, HighlightListResponse
 from ..database import get_db
 from ..database.repositories import HighlightRepository
 from ..database.schemas import convert_highlight_db_to_response
-from .main import get_trusted_user
+from .utils import get_trusted_user
 
 router = APIRouter(prefix="/highlights", tags=["Highlights"])
 

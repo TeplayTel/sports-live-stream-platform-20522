@@ -10,7 +10,7 @@ from .utils import get_trusted_user
 router = APIRouter(prefix="/highlights", tags=["Highlights"])
 
 # PUBLIC_INTERFACE
-@router.get("/", response_model=dict, summary="Get highlights list")
+@router.get("/", summary="Get highlights list")
 async def get_highlights(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
@@ -43,7 +43,7 @@ async def get_highlights(
     }
 
 # PUBLIC_INTERFACE
-@router.get("/{highlight_id}", response_model=dict, summary="Get highlight details")
+@router.get("/{highlight_id}", summary="Get highlight details")
 async def get_highlight_details(
     highlight_id: str,
     request: Request = None,
@@ -63,7 +63,7 @@ async def get_highlight_details(
     return highlight.dict() if hasattr(highlight, "dict") else highlight
 
 # PUBLIC_INTERFACE
-@router.get("/featured/latest", response_model=dict, summary="Get latest featured highlights")
+@router.get("/featured/latest", summary="Get latest featured highlights")
 async def get_featured_highlights(
     limit: int = Query(10, ge=1, le=50, description="Number of highlights to return"),
     request: Request = None,

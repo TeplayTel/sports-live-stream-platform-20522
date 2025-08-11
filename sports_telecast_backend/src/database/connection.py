@@ -16,8 +16,12 @@ DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
 
 if not DATABASE_URL:
     raise RuntimeError(
-        "DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection. "
-        "Hardcoded database connection or localhost is not supported. "
+        "DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection.\n"
+        "No database username provided. By default, the system expects the role/user 'appuser'.\n"
+        "If you see errors referring to 'role \"kavia\" does not exist', you have not set your env vars correctly, "
+        "or are using the wrong username in your connection string.\n"
+        "Update your .env to match the correct username and see .env.example for reference.\n"
+        "Hardcoded database connection or localhost with the wrong user is not supported.\n"
         "Please contact support if you see this error in production."
     )
 

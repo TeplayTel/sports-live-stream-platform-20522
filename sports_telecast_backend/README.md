@@ -46,13 +46,14 @@ A comprehensive FastAPI backend for a sports live streaming platform that provid
 
 5. **Start the server**:
    ```bash
-   PYTHONPATH=. uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+   # Preview expects FastAPI to listen on port 3001
+   PYTHONPATH=. uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
    ```
 
 6. **Access the API**:
-   - API Documentation: http://localhost:8000/docs
-   - Health Check: http://localhost:8000/
-   - OpenAPI Spec: http://localhost:8000/openapi.json
+   - API Documentation: http://localhost:3001/docs
+   - Health Check: http://localhost:3001/
+   - OpenAPI Spec: http://localhost:3001/openapi.json
 
 ## 🛠 Database Setup and Configuration
 
@@ -169,7 +170,7 @@ curl -X POST "http://localhost:8000/fan-engagement/emoji/v1/userEmojiReaction" \
 Connect to WebSocket for live emoji reaction updates:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/ws/EVT123?token=your_jwt_token');
+const ws = new WebSocket('ws://localhost:3001/ws/EVT123?token=your_jwt_token');
 
 ws.onmessage = function(event) {
     const data = JSON.parse(event.data);
@@ -328,7 +329,7 @@ This project is licensed under the MIT License.
 
 For support and questions:
 - 📧 Email: support@sportstelecast.com
-- 📚 Documentation: http://localhost:8000/docs
+- 📚 Documentation: http://localhost:3001/docs
 - 🐛 Issues: Create an issue in the repository
 
 ---

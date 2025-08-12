@@ -22,7 +22,7 @@ from typing import Dict, Any, Optional
 class APITester:
     """Comprehensive API testing class"""
     
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://localhost:3001"):
         self.base_url = base_url
         self.session = None
         self.auth_token = None
@@ -394,7 +394,7 @@ async def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Comprehensive API Testing")
-    parser.add_argument("--url", default="http://localhost:8000", help="API base URL")
+    parser.add_argument("--url", default="http://localhost:3001", help="API base URL")
     args = parser.parse_args()
     
     tester = APITester(args.url)

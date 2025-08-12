@@ -10,7 +10,7 @@ async def test_websocket():
     """Test WebSocket connection to the backend"""
     
     # Test without authentication first
-    uri = "ws://localhost:8000/ws/MATCH001"
+    uri = "ws://localhost:3001/ws/MATCH001"
     
     try:
         print(f"🔗 Connecting to {uri}...")

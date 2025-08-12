@@ -205,5 +205,21 @@ tags_metadata = [
 app.openapi_tags = tags_metadata
 
 if __name__ == "__main__":
+    """
+    Entrypoint for running the app directly.
+
+    Binds to host/port derived from environment variables:
+    - HOST: defaults to '0.0.0.0' to allow external access (preview/proxy)
+    - PORT: defaults to 3001 to match the preview system's expectations
+    """
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+
+    host = os.getenv("HOST", "0.0.0.0")
+    try:
+        port = int(os.getenv("PORT", "3001"))
+    except ValueError:
+        port = 3001
+
+    # Using string import path keeps reload/import resolution consistent when used externally
+    uvicorn.run("src.api.main:app", host=host, port=port, log_level="info")

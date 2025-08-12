@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -63,9 +63,18 @@ class EmojiListResponse(BaseModel):
 
 class EmojiReactionRequest(BaseModel):
     """Request model for emoji reaction"""
+    # Support userId in body as optional (preferred comes from headers/params)
+    user_id: Optional[str] = Field(
+        default=None,
+        alias="userId",
+        description="User identifier (optional if provided via header/query). Accepts 'userId' (camelCase) or 'user_id' (snake_case)."
+    )
     event_id: str = Field(..., description="Event identifier", example="EVT123")
     emoji_id: str = Field(..., description="Emoji identifier", example="EMJ001")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow, description="Reaction timestamp")
+
+    # Pydantic v2 config to allow alias population
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 class EmojiReactionResponse(BaseModel):
     """Response model for emoji reaction"""

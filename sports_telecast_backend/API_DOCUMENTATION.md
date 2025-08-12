@@ -125,6 +125,10 @@ Connect to `/ws/{event_id}?token=your_jwt_token` for:
 ### Emoji Reactions
 1. Get available emojis: `GET /fan-engagement/emoji/v1/listEmojis`
 2. Submit reaction: `POST /fan-engagement/emoji/v1/userEmojiReaction`
+   - userId can be provided via:
+     - Header: `X-User-Id: <USER_ID>` (recommended)
+     - Query param: `?user_id=<USER_ID>` or `?userId=<USER_ID>`
+     - Request body: `{"userId": "<USER_ID>"}` or `{"user_id": "<USER_ID>"}`
 3. Get summary: `GET /fan-engagement/emoji/v1/reactions/{event_id}`
 
 ## Pagination

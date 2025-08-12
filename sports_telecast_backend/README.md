@@ -303,11 +303,24 @@ curl -X GET "http://localhost:8000/matches/MATCH001"
 curl -X GET "http://localhost:8000/fan-engagement/emoji/v1/listEmojis" \
   -H "Authorization: Bearer $TOKEN"
 
-# 2. Submit reaction
+# 2a. Submit reaction (Header-based userId - recommended)
+curl -X POST "http://localhost:8000/fan-engagement/emoji/v1/userEmojiReaction" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-User-Id: USR123" \
+  -H "Content-Type: application/json" \
+  -d '{"event_id": "MATCH001", "emoji_id": "EMJ103"}'
+
+# 2b. Submit reaction (Query param userId)
+curl -X POST "http://localhost:8000/fan-engagement/emoji/v1/userEmojiReaction?user_id=USR123" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"event_id": "MATCH001", "emoji_id": "EMJ103"}'
+
+# 2c. Submit reaction (Body userId - camelCase or snake_case)
 curl -X POST "http://localhost:8000/fan-engagement/emoji/v1/userEmojiReaction" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"userId": "USR123", "eventId": "MATCH001", "emojiId": "EMJ103"}'
+  -d '{"userId": "USR123", "event_id": "MATCH001", "emoji_id": "EMJ103"}'
 
 # 3. Get reaction summary
 curl -X GET "http://localhost:8000/fan-engagement/emoji/v1/reactions/MATCH001"

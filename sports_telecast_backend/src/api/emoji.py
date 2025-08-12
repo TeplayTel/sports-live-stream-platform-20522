@@ -44,27 +44,43 @@ async def create_emoji_reaction(
 ):
     """
     Submit an emoji reaction for a live event.
-    Accepts userId from trusted frontend in headers/body/params.
+
+    Accepted userId sources (priority):
+      1) Header: X-User-Id (recommended for trusted frontend)
+      2) Query param: user_id / userId
+      3) Request body: user_id / userId (optional field on EmojiReactionRequest)
     """
     user_id, _ = get_trusted_user(request)
+    # Fallback to userId from body if not present in headers/query
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing userId in headers or params.")
+        user_id = getattr(reaction_request, "user_id", None)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing userId in headers, query params, or body."
+        )
+
     emoji_repo = EmojiRepository()
     match_repo = MatchRepository()
     event_repo = EventRepository()
+
     emoji_db = await emoji_repo.get_emoji_by_id(reaction_request.emoji_id)
     if not emoji_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Emoji not found")
+
     match_db = await match_repo.get_match_by_id(reaction_request.event_id)
     event_db = await event_repo.get_event_by_id(reaction_request.event_id)
     if not match_db and not event_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
     reaction_id = await emoji_repo.add_reaction(
         user_id,
         reaction_request.event_id,
         reaction_request.emoji_id
     )
     summary = await emoji_repo.get_reaction_summary(reaction_request.event_id)
+
     import asyncio
     emoji_update_data = {
         "event_id": reaction_request.event_id,

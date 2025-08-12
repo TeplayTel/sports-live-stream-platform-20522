@@ -62,7 +62,7 @@ class EmojiListResponse(BaseModel):
     page_size: int = Field(..., description="Page size")
 
 class EmojiReactionRequest(BaseModel):
-    """Request model for emoji reaction"""
+    """Request model for legacy emoji reaction (backwards-compatible)"""
     # Support userId in body as optional (preferred comes from headers/params)
     user_id: Optional[str] = Field(
         default=None,
@@ -77,10 +77,27 @@ class EmojiReactionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 class EmojiReactionResponse(BaseModel):
-    """Response model for emoji reaction"""
+    """Response model for legacy emoji reaction"""
     status: str = Field(default="SUCCESS", description="Response status")
     reaction_id: str = Field(..., description="Unique reaction identifier")
     message: str = Field(default="Reaction recorded successfully", description="Response message")
+
+# PUBLIC_INTERFACE
+class UserEmojiReactionCaptureRequest(BaseModel):
+    """Request model matching the exact contract for capturing a user emoji reaction."""
+    userId: str = Field(..., description="User identifier (string UUID)")
+    eventId: str = Field(..., description="Event or match identifier (string UUID)")
+    emojiId: str = Field(..., description="Emoji identifier (string UUID)")
+    createdAt: str = Field(..., description="ISO 8601 timestamp string for when the reaction occurred")
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+# PUBLIC_INTERFACE
+class ReactionCapturedResponse(BaseModel):
+    """Response model matching the required SUCCESS payload with reactionId data."""
+    status: str = Field(default="SUCCESS", description="Response status indicator")
+    message: str = Field(default="Reaction captured successfully", description="Human-readable status message")
+    data: Dict[str, str] = Field(..., description="Contains the new 'reactionId' created in the database")
 
 class WebSocketMessage(BaseModel):
     """WebSocket message model for real-time updates"""

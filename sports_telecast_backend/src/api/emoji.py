@@ -1,14 +1,42 @@
-from fastapi import APIRouter, HTTPException, status, Query, Request, Body
+from fastapi import APIRouter, HTTPException, status, Query, Request, Body, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+import asyncio
+
 from ..models.emoji import (
-    EmojiListResponse, EmojiReactionRequest, EmojiReactionResponse,
-    EmojiReactionSummary
+    EmojiListResponse,
+    EmojiReactionSummary,
+    UserEmojiReactionCaptureRequest,
+    ReactionCapturedResponse,
 )
 from ..database.repositories import EmojiRepository, MatchRepository, EventRepository
 from ..database.schemas import convert_emoji_db_to_pydantic
+from ..database.connection import get_db
 from ..websocket.manager import manager
+from ..auth.jwt_auth import get_current_user_id
 from .utils import get_trusted_user
 
 router = APIRouter(prefix="/fan-engagement/emoji/v1", tags=["Fan Engagement - Emojis"])
+
+
+def _parse_created_at(created_at_str: str) -> datetime:
+    """
+    Parse createdAt string into a timezone-aware datetime where possible.
+    Accepts ISO 8601 formats; falls back to naive parsing as UTC if tz absent.
+    """
+    # Try ISO format with 'Z' or offset
+    try:
+        # Handle 'Z' suffix
+        if created_at_str.endswith("Z"):
+            created_at_str = created_at_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(created_at_str)
+        return dt
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid createdAt format. Use ISO 8601 string (e.g., 2025-07-29T11:35:24Z).",
+        )
+
 
 # PUBLIC_INTERFACE
 @router.get("/listEmojis", response_model=EmojiListResponse, summary="List available emojis")
@@ -16,6 +44,7 @@ async def list_emojis(
     pageNo: int = Query(1, ge=1, description="Page number"),
     pageSize: int = Query(10, ge=1, le=100, description="Page size"),
     request: Request = None,
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get paginated list of available emojis for reactions.
@@ -23,7 +52,7 @@ async def list_emojis(
     """
     get_trusted_user(request)
     offset = (pageNo - 1) * pageSize
-    emoji_repo = EmojiRepository()
+    emoji_repo = EmojiRepository(db)
     emojis_db = await emoji_repo.get_emojis(limit=pageSize, offset=offset)
     emojis = [convert_emoji_db_to_pydantic(emoji) for emoji in emojis_db]
     all_emojis_db = await emoji_repo.get_emojis(limit=1000, offset=0)
@@ -33,90 +62,126 @@ async def list_emojis(
         emojis=emojis,
         total=total_count,
         page=pageNo,
-        page_size=pageSize
+        page_size=pageSize,
     )
 
+
 # PUBLIC_INTERFACE
-@router.post("/userEmojiReaction", response_model=EmojiReactionResponse, summary="Submit emoji reaction")
+@router.post(
+    "/userEmojiReaction",
+    response_model=ReactionCapturedResponse,
+    summary="Submit emoji reaction",
+    description="Requires Authorization: Bearer <user-token>. Accepts body: {userId, eventId, emojiId, createdAt}.",
+)
 async def create_emoji_reaction(
-    reaction_request: EmojiReactionRequest = Body(...),
+    reaction_request: UserEmojiReactionCaptureRequest = Body(...),
     request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
     Submit an emoji reaction for a live event.
 
-    Accepted userId sources (priority):
-      1) Header: X-User-Id (recommended for trusted frontend)
-      2) Query param: user_id / userId
-      3) Request body: user_id / userId (optional field on EmojiReactionRequest)
-    """
-    user_id, _ = get_trusted_user(request)
-    # Fallback to userId from body if not present in headers/query
-    if not user_id:
-        user_id = getattr(reaction_request, "user_id", None)
+    Authorization:
+      - Requires 'Authorization: Bearer <user-token>' header.
 
-    if not user_id:
+    Request body (JSON):
+      - userId (str): ID of the user submitting the reaction
+      - eventId (str): ID of event or match
+      - emojiId (str): ID of the emoji
+      - createdAt (str): ISO 8601 timestamp for when the reaction occurred
+
+    Returns:
+      - {
+          "status": "SUCCESS",
+          "message": "Reaction captured successfully",
+          "data": { "reactionId": "<uuid>" }
+        }
+    """
+    # Validate presence of fields via Pydantic and parse createdAt
+    user_id: str = reaction_request.userId
+    event_id: str = reaction_request.eventId
+    emoji_id: str = reaction_request.emojiId
+    created_at_str: str = reaction_request.createdAt
+
+    if not all([user_id, event_id, emoji_id, created_at_str]):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing userId in headers, query params, or body."
+            detail="Missing required fields: userId, eventId, emojiId, createdAt",
         )
 
-    emoji_repo = EmojiRepository()
-    match_repo = MatchRepository()
-    event_repo = EventRepository()
+    created_at: datetime = _parse_created_at(created_at_str)
 
-    emoji_db = await emoji_repo.get_emoji_by_id(reaction_request.emoji_id)
+    # Repositories
+    emoji_repo = EmojiRepository(db)
+    match_repo = MatchRepository(db)
+    event_repo = EventRepository(db)
+
+    # Validate emoji exists
+    emoji_db = await emoji_repo.get_emoji_by_id(emoji_id)
     if not emoji_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Emoji not found")
 
-    match_db = await match_repo.get_match_by_id(reaction_request.event_id)
-    event_db = await event_repo.get_event_by_id(reaction_request.event_id)
+    # Validate event/match exists (support either)
+    match_db = await match_repo.get_match_by_id(event_id)
+    event_db = await event_repo.get_event_by_id(event_id)
     if not match_db and not event_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
+    # Persist reaction with provided createdAt
     reaction_id = await emoji_repo.add_reaction(
-        user_id,
-        reaction_request.event_id,
-        reaction_request.emoji_id
+        user_id=user_id,
+        event_id=event_id,
+        emoji_id=emoji_id,
+        created_at=created_at,
     )
-    summary = await emoji_repo.get_reaction_summary(reaction_request.event_id)
 
-    import asyncio
-    emoji_update_data = {
-        "event_id": reaction_request.event_id,
-        "emoji_id": reaction_request.emoji_id,
-        "emoji_type": emoji_db.emoji_type.value,
-        "new_count": summary.get("emoji_counts", {}).get(reaction_request.emoji_id, 1),
-        "user_id": user_id,
-        "reaction_summary": {
-            "total_reactions": summary.get("total_reactions", 0),
-            "top_emojis": summary.get("top_emojis", [])
+    # Asynchronously broadcast updated counts (best-effort, non-blocking)
+    try:
+        summary = await emoji_repo.get_reaction_summary(event_id)
+        emoji_update_data = {
+            "event_id": event_id,
+            "emoji_id": emoji_id,
+            "emoji_type": emoji_db.emoji_type.value,
+            "new_count": summary.get("emoji_counts", {}).get(emoji_id, 1),
+            "user_id": user_id,
+            "reaction_summary": {
+                "total_reactions": summary.get("total_reactions", 0),
+                "top_emojis": summary.get("top_emojis", []),
+            },
         }
-    }
-    asyncio.create_task(manager.broadcast_emoji_reaction(
-        reaction_request.event_id, emoji_update_data
-    ))
-    return EmojiReactionResponse(
+        asyncio.create_task(manager.broadcast_emoji_reaction(event_id, emoji_update_data))
+    except Exception:
+        # Do not fail the API if websocket broadcast fails
+        pass
+
+    return ReactionCapturedResponse(
         status="SUCCESS",
-        reaction_id=reaction_id,
-        message="Reaction recorded successfully"
+        message="Reaction captured successfully",
+        data={"reactionId": reaction_id},
     )
+
 
 # PUBLIC_INTERFACE
 @router.get("/reactions/{event_id}", response_model=EmojiReactionSummary, summary="Get event reaction summary")
 async def get_event_reactions(
     event_id: str,
     request: Request = None,
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get emoji reaction summary for a specific event.
     Accepts userId/userData (optional) from trusted frontend, no auth required.
     """
     get_trusted_user(request)
-    match_repo = MatchRepository()
-    emoji_repo = EmojiRepository()
+    match_repo = MatchRepository(db)
+    emoji_repo = EmojiRepository(db)
     match_db = await match_repo.get_match_by_id(event_id)
     if not match_db:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        # Allow summaries for events even if match isn't found (some event_ids refer to EventDB)
+        event_repo = EventRepository(db)
+        event_db = await event_repo.get_event_by_id(event_id)
+        if not event_db:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     summary = await emoji_repo.get_reaction_summary(event_id)
     return summary

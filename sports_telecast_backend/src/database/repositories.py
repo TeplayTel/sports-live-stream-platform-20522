@@ -383,14 +383,25 @@ class EmojiRepository(BaseRepository):
         return result.scalar_one_or_none()
     
     # PUBLIC_INTERFACE
-    async def add_reaction(self, user_id: str, event_id: str, emoji_id: str) -> str:
-        """Add emoji reaction"""
+    async def add_reaction(self, user_id: str, event_id: str, emoji_id: str, created_at: Optional[datetime] = None) -> str:
+        """
+        Add emoji reaction.
+        
+        Args:
+            user_id: ID of the reacting user
+            event_id: ID of the event/match
+            emoji_id: ID of the emoji
+            created_at: Explicit timestamp for the reaction (if provided by client)
+        Returns:
+            Newly created reaction_id
+        """
         reaction_id = str(uuid.uuid4())
         reaction = UserEmojiReactionDB(
             reaction_id=reaction_id,
             user_id=user_id,
             event_id=event_id,
-            emoji_id=emoji_id
+            emoji_id=emoji_id,
+            created_at=created_at or datetime.utcnow(),
         )
         
         self.session.add(reaction)

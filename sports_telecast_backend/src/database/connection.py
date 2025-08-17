@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
 )
-from contextlib import asynccontextmanager
+
 
 # PUBLIC_INTERFACE
 # Use only the provided environment variable for DB connection string.
@@ -62,18 +62,16 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # PUBLIC_INTERFACE
-@asynccontextmanager
 async def get_db():
     """
-    Dependency that provides a SQLAlchemy async database session.
-    Usage: async with get_db() as session:
-    Or: db = await get_db().__anext__()
+    Dependency that provides a SQLAlchemy async database session to FastAPI routes.
+
+    Yields:
+        AsyncSession: An active SQLAlchemy async session. FastAPI will ensure
+        the finalizer is called after the request finishes.
     """
-    db = AsyncSessionLocal()
-    try:
+    async with AsyncSessionLocal() as db:
         yield db
-    finally:
-        await db.close()
 
 # PUBLIC_INTERFACE
 async def init_database():

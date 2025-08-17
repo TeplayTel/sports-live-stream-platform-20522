@@ -2,7 +2,7 @@ import os
 import uuid
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Header, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, String, DateTime
+from sqlalchemy import create_engine, Column, String, DateTime, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 from typing import Optional, Union, List
@@ -186,12 +186,20 @@ async def upload_emoji(
         if os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(status_code=500, detail=f"Failed to save emoji asset: {str(e)}")
-    finally:
-        db.close()
 
     # Generate the public image URL (actual CDN should proxy or serve assets)
     cdn_base = get_cdn_base_url()
     image_url = f"{cdn_base.rstrip('/')}/{file_name}"
+
+    # Best-effort: update image_url column on emoji_assets if it exists (keeps schema in sync for listing API)
+    try:
+        db.execute(text("UPDATE emoji_assets SET image_url = :url WHERE emoji_id = :id"), {"url": image_url, "id": emoji_id})
+        db.commit()
+    except Exception:
+        # Ignore if column doesn't exist or update fails
+        pass
+    finally:
+        db.close()
 
     return UploadEmojiResponse(
         status="SUCCESS",

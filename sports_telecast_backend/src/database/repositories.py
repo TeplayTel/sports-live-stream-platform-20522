@@ -7,7 +7,7 @@ and provide a clean interface for business logic layers.
 
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc
+from sqlalchemy import select, func, and_, desc, text
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import uuid
@@ -363,16 +363,40 @@ class EmojiRepository(BaseRepository):
     """Repository for emoji operations"""
     
     # PUBLIC_INTERFACE
-    async def get_emojis(self, limit: int = 10, offset: int = 0) -> List[EmojiAssetDB]:
-        """Get paginated list of active emojis"""
-        result = await self.session.execute(
-            select(EmojiAssetDB)
-            .where(EmojiAssetDB.is_active == True)
-            .order_by(EmojiAssetDB.sort_order)
-            .offset(offset)
-            .limit(limit)
-        )
-        return result.scalars().all()
+    async def get_emojis(self, limit: int = 10, offset: int = 0):
+        """
+        Get paginated list of active emojis.
+
+        Returns:
+            List[EmojiAssetDB] in normal schema, or a list[dict]-like fallback rows for minimal schema.
+        """
+        try:
+            result = await self.session.execute(
+                select(EmojiAssetDB)
+                .where(EmojiAssetDB.is_active == True)  # noqa: E712
+                .order_by(EmojiAssetDB.sort_order)
+                .offset(offset)
+                .limit(limit)
+            )
+            return result.scalars().all()
+        except Exception:
+            # Fallback path for databases missing full emoji_assets columns (e.g., image_url, name, etc.)
+            # Select minimal available fields to avoid referencing non-existent columns.
+            fallback_sql = text(
+                """
+                SELECT
+                    emoji_id::text AS emoji_id,
+                    emoji_type::text AS emoji_type,
+                    file_location,
+                    created_at
+                FROM emoji_assets
+                ORDER BY created_at DESC
+                OFFSET :offset LIMIT :limit
+                """
+            )
+            result = await self.session.execute(fallback_sql, {"offset": offset, "limit": limit})
+            # Return list of dict mappings to be handled by convert_emoji_db_to_pydantic
+            return [dict(row) for row in result.mappings().all()]
     
     # PUBLIC_INTERFACE
     async def get_emoji_by_id(self, emoji_id: str) -> Optional[EmojiAssetDB]:

@@ -54,6 +54,11 @@ The Sports Telecast Backend uses SQLAlchemy ORM models that perfectly mirror the
 - **Relationships**: One-to-many with `UserEmojiReactionDB`
 - **Pydantic Mirror**: `EmojiAsset`
 
+Note:
+- Some older/minimal schemas (introduced by an auxiliary upload flow) created `emoji_assets` with only: `emoji_id`, `emoji_type`, `file_location`, `created_at`.
+- To align with the API contract, apply Alembic migration `005_add_image_url_to_emoji_assets` which adds `image_url` and backfills it from `file_location` using `EMOJI_CDN_BASE_URL`.
+- The repository and schema conversion code are resilient and will compute `image_url` from `file_location` during transition.
+
 #### UserEmojiReactionDB
 - **Purpose**: Stores user reactions to events
 - **Key Fields**: `reaction_id`, `user_id`, `event_id`, `emoji_id`

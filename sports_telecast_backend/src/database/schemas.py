@@ -5,9 +5,11 @@ This module provides functions to convert between Pydantic models and SQLAlchemy
 ensuring proper data transformation and relationship handling.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel
+import os
+import os.path
 
 from .models import (
     UserDB, EventDB, MatchDB, TeamDB, HighlightDB, EmojiAssetDB
@@ -175,15 +177,92 @@ def convert_schedule_db_to_response(schedule_db: MatchDB) -> ScheduleResponse:
         updated_at=schedule_db.updated_at
     )
 
-def convert_emoji_db_to_pydantic(emoji_db: EmojiAssetDB) -> Dict[str, Any]:
-    """Convert EmojiAssetDB to pydantic response dict"""
+def _get_cdn_base_url() -> str:
+    """
+    Returns the base CDN URL for constructing emoji image URLs.
+    Reads EMOJI_CDN_BASE_URL from environment, falling back to a placeholder CDN path.
+    """
+    base = os.getenv("EMOJI_CDN_BASE_URL", "https://cdn.placeholderdomain.com/emojis/")
+    return base.rstrip("/") + "/"
+
+def _coalesce_image_url(record: Any) -> Optional[str]:
+    """
+    Compute or retrieve image_url from a record that may or may not have the 'image_url' column.
+    If image_url is missing or empty, try to derive it from 'file_location' if present.
+    """
+    # Try direct attribute or dict access
+    img = getattr(record, "image_url", None)
+    if img is None and isinstance(record, dict):
+        img = record.get("image_url")
+
+    # Normalize empty string to None
+    if isinstance(img, str) and img.strip() == "":
+        img = None
+
+    if img:
+        return img
+
+    # Fallback: build from file_location (basename)
+    file_location = getattr(record, "file_location", None)
+    if file_location is None and isinstance(record, dict):
+        file_location = record.get("file_location")
+
+    if isinstance(file_location, str) and file_location.strip():
+        filename = os.path.basename(file_location.strip())
+        if filename:
+            return _get_cdn_base_url() + filename
+
+    return None
+
+def _get_attr_or_default(record: Any, name: str, default: Any = None) -> Any:
+    """
+    Helper to read an attribute from either ORM object or dict-like with default.
+    """
+    if hasattr(record, name):
+        return getattr(record, name)
+    if isinstance(record, dict) and name in record:
+        return record[name]
+    return default
+
+def _normalize_emoji_type(value: Any) -> str:
+    """
+    Accepts an Enum or string and returns the underlying string value.
+    """
+    if value is None:
+        return "clap"
+    return getattr(value, "value", value)
+
+def convert_emoji_db_to_pydantic(emoji_db: Union[EmojiAssetDB, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Convert EmojiAssetDB (or a dict-like fallback row) to a response dict compatible with Pydantic model.
+    Provides robust fallbacks if columns are missing (older/minimal schema).
+
+    Fields:
+    - image_url: if missing, derive from 'file_location' using EMOJI_CDN_BASE_URL + basename(file)
+    - name: default from emoji_type title-case if missing
+    - is_active: defaults to True if missing
+    - sort_order: defaults to 0 if missing
+    - created_at: defaults to now if missing
+    """
+    emoji_id = _get_attr_or_default(emoji_db, "emoji_id")
+    emoji_type_raw = _get_attr_or_default(emoji_db, "emoji_type", "clap")
+    emoji_type = _normalize_emoji_type(emoji_type_raw)
+    image_url = _coalesce_image_url(emoji_db)
+
+    # Sensible defaults for older schema
+    name = _get_attr_or_default(emoji_db, "name", str(emoji_type).replace("_", " ").title())
+    description = _get_attr_or_default(emoji_db, "description", None)
+    is_active = _get_attr_or_default(emoji_db, "is_active", True)
+    sort_order = _get_attr_or_default(emoji_db, "sort_order", 0)
+    created_at = _get_attr_or_default(emoji_db, "created_at", datetime.utcnow())
+
     return {
-        "emoji_id": str(emoji_db.emoji_id),
-        "emoji_type": emoji_db.emoji_type.value,
-        "image_url": emoji_db.image_url,
-        "name": emoji_db.name,
-        "description": emoji_db.description,
-        "is_active": emoji_db.is_active,
-        "sort_order": emoji_db.sort_order,
-        "created_at": emoji_db.created_at
+        "emoji_id": str(emoji_id),
+        "emoji_type": emoji_type,
+        "image_url": image_url or _get_cdn_base_url() + f"{emoji_id}.png",
+        "name": name,
+        "description": description,
+        "is_active": is_active,
+        "sort_order": sort_order,
+        "created_at": created_at
     }

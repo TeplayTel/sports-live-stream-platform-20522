@@ -54,14 +54,23 @@ router = APIRouter()
 @router.post(
     "/fan-engagement/emoji/v1/upload",
     summary="Upload a new emoji asset for user reactions",
-    description="Upload an emoji image (admin only for now), store file, register in DB, and return details.",
+    description=(
+        "Upload an emoji image (admin only for now), store file, register in DB, and return details.\n"
+        "Auth: Requires Authorization: Bearer <ADMIN_UPLOAD_TOKEN>."
+    ),
     response_model=UploadEmojiResponse,
+    responses={
+        401: {"description": "Missing or invalid authorization header"},
+        403: {"description": "Insufficient privileges"},
+        422: {"description": "Validation error (invalid emojiType or missing file)"}
+    },
     tags=["Fan Engagement - Emojis"]
 )
 async def upload_emoji(
     emojiType: str = Form(..., description="Type/category of the emoji (e.g. clap, fire)"),
-    emojiImage: UploadFile = File(..., description="Emoji image file (PNG preferred)"),
-    authorization: Optional[str] = Header(None, description="Bearer admin token"),
+    emojiImage: UploadFile = File(None, description="Emoji image file (PNG preferred). Preferred key: emojiImage"),
+    file: UploadFile = File(None, description="Alternative file key supported for compatibility"),
+    authorization: Optional[str] = Header(None, alias="Authorization", description="Bearer admin token"),
 ):
     """
     Uploads a new emoji asset to the platform (admin only for MVP).
@@ -70,30 +79,43 @@ async def upload_emoji(
     - Inserts a new record into emoji_assets.
     - Returns emoji asset details.
 
-    Future: Replace hardcoded admin token check with JWT/role-based auth.
+    Auth:
+      - Requires 'Authorization: Bearer <ADMIN_UPLOAD_TOKEN>' header.
+      - ADMIN_UPLOAD_TOKEN is read from environment (.env). Defaults to 'admin' for local dev.
 
     Request (multipart/form-data):
       - emojiType: string
-      - emojiImage: file (binary)
+      - emojiImage: file (binary). As a compatibility fallback, 'file' is also accepted.
+
     Headers:
       - Authorization: Bearer <admin-token>
     """
     # Placeholder admin check (replace with JWT roles in future)
     admin_token = os.getenv("ADMIN_UPLOAD_TOKEN", "admin")
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid authorization header")
+
+    # Validate Authorization header robustly
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header"
+        )
     token_value = authorization.split(" ", 1)[1]
     if token_value != admin_token:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient privileges")
 
     # Validate emojiType (optional: match to allowed values)
-    if not emojiType.isidentifier() or len(emojiType) > 32:
+    if not emojiType or not emojiType.isidentifier() or len(emojiType) > 32:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid emojiType")
+
+    # Choose the provided file (support both 'emojiImage' and 'file' keys for compatibility)
+    image_file = emojiImage or file
+    if image_file is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing emoji image file")
 
     # Save image to storage directory (ensure directory exists)
     storage_dir = get_storage_dir()
     os.makedirs(storage_dir, exist_ok=True)
-    ext = os.path.splitext(emojiImage.filename or "")[1].lower()
+    ext = os.path.splitext(image_file.filename or "")[1].lower()
     if ext not in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type")
     emoji_id = str(uuid.uuid4())
@@ -101,7 +123,7 @@ async def upload_emoji(
     file_path = os.path.join(storage_dir, file_name)
 
     with open(file_path, "wb") as out_file:
-        while content := await emojiImage.read(4096):
+        while content := await image_file.read(4096):
             out_file.write(content)
 
     # Insert into DB

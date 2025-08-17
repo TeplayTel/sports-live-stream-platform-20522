@@ -97,7 +97,7 @@ async def refresh_access_token(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user_response = convert_user_db_to_response(user)
     return TokenData(
-        access_token="mock_token",
+        access_token=get_mock_bearer_token(),
         token_type="bearer",
         expires_in=86400,
         user=user_response

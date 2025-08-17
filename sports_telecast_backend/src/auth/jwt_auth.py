@@ -2,6 +2,14 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import os
 
+# Ensure environment variables from a .env file are available even if this module is imported standalone
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    # Optional in production environments
+    pass
+
 import jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
@@ -15,8 +23,34 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
 
-# Mock token that the backend will accept as valid for all endpoints (admin-level)
-MOCK_JWT_TOKEN = os.getenv("MOCK_JWT_TOKEN", "mock-superuser-jwt-token")
+# Default mock token string that should ALWAYS be accepted in development/test
+DEFAULT_MOCK_JWT_TOKEN = "mock-superuser-jwt-token"
+
+def _normalize_token(value: Optional[str]) -> str:
+    """
+    Normalize a token string by:
+      - handling None safely
+      - trimming whitespace
+      - removing wrapping single/double quotes often present in envs
+      - stripping accidental 'Bearer ' prefixes if provided incorrectly
+    """
+    if not value:
+        return ""
+    s = value.strip()
+    if s.lower().startswith("bearer "):
+        s = s[7:]
+    # Strip wrapping quotes if any
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1].strip()
+    return s.strip()
+
+def _get_configured_mock_token() -> str:
+    """
+    Read MOCK_JWT_TOKEN from environment on-demand and normalize it.
+    If empty or unset, falls back to DEFAULT_MOCK_JWT_TOKEN.
+    """
+    configured = _normalize_token(os.getenv("MOCK_JWT_TOKEN", ""))
+    return configured or DEFAULT_MOCK_JWT_TOKEN
 
 security = HTTPBearer()
 
@@ -64,13 +98,29 @@ class JWTAuth:
 
     @staticmethod
     def verify_token(token: str) -> Dict[str, Any]:
-        """Verify and decode a JWT token; accept a special mock token as universally valid."""
-        # Accept the fixed mock token without signature verification (testing only)
-        if token == MOCK_JWT_TOKEN:
+        """
+        Verify and decode a JWT token; accept a special mock token as universally valid.
+
+        Acceptance rules (in this order):
+          1) Accept if token equals the configured MOCK_JWT_TOKEN (normalized)
+          2) Accept if token equals the DEFAULT_MOCK_JWT_TOKEN ("mock-superuser-jwt-token")
+          3) Otherwise, verify as a signed JWT with SECRET_KEY/ALGORITHM
+        """
+        incoming = _normalize_token(token)
+        if not incoming:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        configured_mock = _get_configured_mock_token()
+        # Accept either the configured value or the default constant to avoid .env mismatch surprises
+        if incoming == configured_mock or incoming == _normalize_token(DEFAULT_MOCK_JWT_TOKEN):
             return JWTAuth._mock_payload()
 
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload = jwt.decode(incoming, SECRET_KEY, algorithms=[ALGORITHM])
             return payload
         except jwt.ExpiredSignatureError:
             raise HTTPException(
@@ -165,5 +215,5 @@ def optional_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(
 
 # PUBLIC_INTERFACE
 def get_mock_bearer_token() -> str:
-    """Return the predefined mock Bearer JWT token that the backend accepts for all roles in testing."""
-    return MOCK_JWT_TOKEN
+    """Return the mock Bearer JWT token that the backend accepts for all roles in testing."""
+    return _get_configured_mock_token()

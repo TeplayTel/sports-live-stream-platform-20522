@@ -5,8 +5,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union, List
 from dotenv import load_dotenv
+from src.auth.jwt_auth import JWTAuth
 
 # Load environment variables from .env for storage path (if running locally)
 load_dotenv()
@@ -100,7 +101,35 @@ async def upload_emoji(
             detail="Missing or invalid authorization header"
         )
     token_value = authorization.split(" ", 1)[1]
-    if token_value != admin_token:
+
+    # Authorize if the token matches the configured ADMIN token
+    authorized = token_value == admin_token
+
+    # Or authorize if it's a (mock) JWT with admin privileges
+    if not authorized:
+        try:
+            payload = JWTAuth.verify_token(token_value)
+            role = payload.get("role")
+            roles = payload.get("roles", [])
+            is_admin = payload.get("is_admin", False)
+            scopes = payload.get("scopes", [])
+            permissions = payload.get("permissions", [])
+
+            def _has_admin(r: Union[str, List[str]]) -> bool:
+                if isinstance(r, str):
+                    return r.lower() == "admin"
+                if isinstance(r, list):
+                    return any(isinstance(x, str) and x.lower() == "admin" for x in r)
+                return False
+
+            if is_admin or _has_admin(role) or _has_admin(roles) or ("*" in scopes) or ("*" in permissions):
+                authorized = True
+        except HTTPException:
+            authorized = False
+        except Exception:
+            authorized = False
+
+    if not authorized:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient privileges")
 
     # Validate emojiType (optional: match to allowed values)

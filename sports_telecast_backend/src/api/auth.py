@@ -7,6 +7,7 @@ from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
 from sqlalchemy.ext.asyncio import AsyncSession
 from .utils import get_trusted_user
+from ..auth.jwt_auth import get_mock_bearer_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -32,7 +33,7 @@ async def login_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     user_response = convert_user_db_to_response(user)
     return TokenData(
-        access_token="mock_token",
+        access_token=get_mock_bearer_token(),
         token_type="bearer",
         expires_in=86400,
         user=user_response

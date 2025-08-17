@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Header
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -70,7 +70,7 @@ router = APIRouter()
 async def upload_emoji(
     emojiType: str = Form(..., description="Type/category of the emoji (e.g. clap, fire)"),
     emojiImage: UploadFile = File(None, description="Emoji image file (PNG preferred). Preferred key: emojiImage"),
-    file: UploadFile = File(None, description="Alternative file key supported for compatibility"),
+    request: Request = None,
     authorization: Optional[str] = Header(None, alias="Authorization", description="Bearer admin token"),
 ):
     """
@@ -137,9 +137,24 @@ async def upload_emoji(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid emojiType")
 
     # Choose the provided file (support both 'emojiImage' and 'file' keys for compatibility)
-    image_file = emojiImage or file
+    # To avoid validation errors when 'file' is sent as a string by some clients,
+    # we only declare 'emojiImage' in the function signature and parse 'file' manually from the form.
+    image_file = emojiImage
     if image_file is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing emoji image file")
+        try:
+            form = await request.form()
+            candidate = form.get("file")
+            if isinstance(candidate, UploadFile):
+                image_file = candidate
+        except Exception:
+            # If parsing fails or candidate is not an UploadFile, continue to 422 below
+            image_file = None
+
+    if image_file is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Missing emoji image file. Please send multipart/form-data with 'emojiImage' (preferred) or 'file' as a file upload."
+        )
 
     # Save image to storage directory (ensure directory exists)
     storage_dir = get_storage_dir()

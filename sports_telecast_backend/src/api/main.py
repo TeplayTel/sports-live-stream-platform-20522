@@ -51,6 +51,15 @@ async def lifespan(app: FastAPI):
         # Check database connection
         if await check_database_connection():
             logger.info("✅ Database connection established successfully")
+
+            # Trigger database seeding after successful connection
+            try:
+                from ..database.seed import seed_database
+                logger.info("🌱 Seeding database with initial data (if needed)...")
+                await seed_database()
+                logger.info("✅ Database seeding completed or skipped")
+            except Exception as se:
+                logger.error(f"❌ Database seeding failed: {se}")
         else:
             logger.warning("⚠️ Database connection check failed")
 

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
 )
+from contextlib import asynccontextmanager
 
 
 # PUBLIC_INTERFACE
@@ -72,6 +73,22 @@ async def get_db():
     """
     async with AsyncSessionLocal() as db:
         yield db
+
+# PUBLIC_INTERFACE
+@asynccontextmanager
+async def get_db_session():
+    """
+    Async context manager that yields an AsyncSession.
+
+    This is intended for internal/background tasks and scripts (e.g., seeders)
+    that need to open an application-managed session outside of a FastAPI
+    dependency context.
+
+    Yields:
+        AsyncSession: An active SQLAlchemy async session.
+    """
+    async with AsyncSessionLocal() as session:
+        yield session
 
 # PUBLIC_INTERFACE
 async def init_database():

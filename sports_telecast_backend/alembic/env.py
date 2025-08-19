@@ -33,13 +33,31 @@ target_metadata = Base.metadata
 # ... etc.
 
 def get_url():
-    """Get database URL from environment variables"""
+    """Get database URL from environment variables.
+
+    Preference order:
+      1) DATABASE_URL or POSTGRES_URL (full URL). If provided as 'postgresql://',
+         convert to 'postgresql+asyncpg://' for Alembic's async engine.
+      2) POSTGRES_HOST/PORT/DB/USER/PASSWORD components (fallback).
+    """
+    full_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    if full_url:
+        if full_url.startswith("postgresql://"):
+            return full_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if full_url.startswith("postgresql+asyncpg://"):
+            return full_url
+        # Allow psycopg2-style schemas too by normalizing
+        if full_url.startswith("postgres://"):
+            return full_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        raise ValueError(f"Unsupported DB URL scheme for Alembic: {full_url}")
+
+    # Fallback to individual POSTGRES_* env vars
     DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
     DB_PORT = os.getenv("POSTGRES_PORT", "5432")
     DB_NAME = os.getenv("POSTGRES_DB", "sports_telecast")
     DB_USER = os.getenv("POSTGRES_USER", "postgres")
     DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
-    
+
     return f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 def run_migrations_offline() -> None:

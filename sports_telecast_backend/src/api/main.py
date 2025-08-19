@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import logging
 from contextlib import asynccontextmanager
+import os
 
 # Import routers
 from .auth import router as auth_router
@@ -48,16 +49,31 @@ async def lifespan(app: FastAPI):
         logger.info("🔗 Initializing database connection...")
         await init_database()
 
+        # Always run migrations on startup before any seeding
+        try:
+            from ..database import run_migrations
+            logger.info("🛠️ Running database migrations (alembic upgrade head)...")
+            await run_migrations()
+            logger.info("✅ Database migrations completed")
+        except Exception as me:
+            logger.error(f"❌ Database migrations failed: {me}")
+
         # Check database connection
         if await check_database_connection():
             logger.info("✅ Database connection established successfully")
 
-            # Trigger database seeding after successful connection
+            # Conditionally trigger database seeding based on env var
             try:
-                from ..database.seed import seed_database
-                logger.info("🌱 Seeding database with initial data (if needed)...")
-                await seed_database()
-                logger.info("✅ Database seeding completed or skipped")
+                should_seed = str(os.getenv("SEED_DB", os.getenv("ENABLE_SEEDING", ""))).strip().lower() in (
+                    "1", "true", "yes", "on", "y", "t"
+                )
+                if should_seed:
+                    from ..database.seed import seed_database
+                    logger.info("🌱 Seeding database with initial data (if needed)...")
+                    await seed_database()
+                    logger.info("✅ Database seeding completed")
+                else:
+                    logger.info("⏭️ Skipping database seeding (SEED_DB/ENABLE_SEEDING not set to true)")
             except Exception as se:
                 logger.error(f"❌ Database seeding failed: {se}")
         else:
@@ -263,7 +279,6 @@ if __name__ == "__main__":
     - PORT: defaults to 3001 to match the preview system's expectations
     """
     import uvicorn
-    import os
 
     host = os.getenv("HOST", "0.0.0.0")
     try:

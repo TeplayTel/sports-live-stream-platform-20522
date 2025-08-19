@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 from contextlib import asynccontextmanager
+import asyncio
+from pathlib import Path
 
 
 # PUBLIC_INTERFACE
@@ -124,6 +126,46 @@ async def get_database_health():
         return {"status": "ok" if ok else "error"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+
+# PUBLIC_INTERFACE
+async def run_migrations():
+    """
+    Run Alembic migrations to upgrade the database schema to the latest version (head).
+
+    This function is safe to call on every application startup; Alembic will only apply
+    pending migrations. It uses the project's alembic.ini and migration scripts.
+
+    Environment variables:
+        - DATABASE_URL or POSTGRES_URL: Full PostgreSQL connection string (preferred).
+          Example: postgresql://user:password@host:port/dbname
+        - Alternatively, Alembic's env.py supports POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
+          POSTGRES_USER, POSTGRES_PASSWORD as a fallback when no full URL is provided.
+
+    Notes:
+        - Alembic operations are synchronous; we run them in a worker thread to avoid blocking
+          the event loop during FastAPI startup.
+    """
+    def _upgrade_sync():
+        from alembic.config import Config
+        from alembic import command
+
+        project_root = Path(__file__).resolve().parents[2]
+        alembic_ini_path = project_root / "alembic.ini"
+        alembic_dir = project_root / "alembic"
+
+        cfg = Config(str(alembic_ini_path))
+        # Ensure script_location is correct even if invoked programmatically
+        cfg.set_main_option("script_location", str(alembic_dir))
+
+        # Provide a URL for tools that read from config; env.py also reads env vars.
+        if DATABASE_URL:
+            cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+
+        command.upgrade(cfg, "head")
+
+    # Offload to a thread to keep async startup responsive
+    await asyncio.to_thread(_upgrade_sync)
 
 
 # =============================================================================

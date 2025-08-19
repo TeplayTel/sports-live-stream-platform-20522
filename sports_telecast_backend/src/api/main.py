@@ -6,9 +6,10 @@ except ImportError:
     # In production, .env auto-loading is optional
     pass
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 import logging
 from contextlib import asynccontextmanager
 
@@ -116,6 +117,46 @@ async def global_exception_handler(request: Request, exc: Exception):
             "detail": "Internal server error",
             "message": "An unexpected error occurred"
         }
+    )
+
+# PUBLIC_INTERFACE
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Specialized validation handler to provide clearer guidance when file uploads are
+    incorrectly sent as strings for the emoji upload endpoint.
+
+    If the 'emojiImage' field is present as a string instead of a file in a multipart/form-data
+    request, FastAPI would normally raise a 422 with a generic message. This handler detects
+    that case and returns a more actionable error and examples.
+    """
+    try:
+        errors = exc.errors()
+        for err in errors:
+            loc = err.get("loc", [])
+            msg = err.get("msg", "")
+            # Detect the common case: 'emojiImage' sent as text instead of file
+            if any(str(x).lower() == "emojiimage" for x in loc) and "UploadFile" in msg:
+                return JSONResponse(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    content={
+                        "detail": "Invalid 'emojiImage' form field. Send a file via multipart/form-data with key 'emojiImage' (e.g., a PNG). Do not send a string.",
+                        "resolution": "Use a FormData/file upload. If using axios or fetch, append the File object. In curl, use -F 'emojiImage=@/path/to/file.png'.",
+                        "examples": {
+                            "curl": "curl -X POST -H 'Authorization: Bearer <token>' -F 'emojiType=clap' -F 'emojiImage=@/path/to/emoji.png' http://localhost:3001/fan-engagement/emoji/v1/upload",
+                            "axios": "const fd = new FormData(); fd.append('emojiType','clap'); fd.append('emojiImage', file); axios.post('/fan-engagement/emoji/v1/upload', fd, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });",
+                            "fetch": "const fd = new FormData(); fd.append('emojiType','clap'); fd.append('emojiImage', fileInput.files[0]); fetch('/fan-engagement/emoji/v1/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });"
+                        },
+                        "note": "As a compatibility fallback, a field named 'file' is also accepted when sent as a file. Prefer 'emojiImage'."
+                    },
+                )
+    except Exception:
+        # Fall through to default behavior if inspection fails
+        pass
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": errors if (errors := exc.errors()) else "Validation error"},
     )
 
 @app.get("/", tags=["Health"], summary="Health Check")

@@ -5,7 +5,7 @@
 The Sports Telecast Backend API is a comprehensive FastAPI-based REST API that powers a live sports streaming platform. It provides endpoints for user management, match data, real-time emoji reactions, schedules, highlights, and more.
 
 ## Base URL
-- Development: `http://localhost:8000`
+- Development: `http://localhost:3001`
 - Production: `https://api.sportstelecast.com`
 
 ## Authentication
@@ -70,6 +70,7 @@ Authorization: Bearer <your_jwt_token>
 - `GET /fan-engagement/emoji/v1/listEmojis` - List available emojis
 - `POST /fan-engagement/emoji/v1/userEmojiReaction` - Submit emoji reaction
 - `GET /fan-engagement/emoji/v1/reactions/{event_id}` - Get reaction summary
+- `POST /fan-engagement/emoji/v1/upload` - Upload a new emoji asset (admin only)
 
 ### 🔗 WebSocket (`/ws`)
 - `WS /ws/{event_id}` - WebSocket connection for real-time updates
@@ -130,6 +131,50 @@ Connect to `/ws/{event_id}?token=your_jwt_token` for:
      - Query param: `?user_id=<USER_ID>` or `?userId=<USER_ID>`
      - Request body: `{"userId": "<USER_ID>"}` or `{"user_id": "<USER_ID>"}`
 3. Get summary: `GET /fan-engagement/emoji/v1/reactions/{event_id}`
+4. Upload emoji asset (admin only): `POST /fan-engagement/emoji/v1/upload`
+   - Headers:
+     - `Authorization: Bearer <ADMIN_UPLOAD_TOKEN or admin JWT with role>` (required)
+   - Content-Type:
+     - `multipart/form-data`
+   - Form fields:
+     - `emojiType` (string, required): e.g., `clap`, `fire`
+     - `emojiImage` (file, required): PNG/JPG/WEBP/GIF image file to upload. Preferred field name.
+       - Compatibility fallback: a file field named `file` is also accepted.
+   - cURL example:
+     ```bash
+     curl -X POST "http://localhost:3001/fan-engagement/emoji/v1/upload" \
+       -H "Authorization: Bearer $ADMIN_TOKEN" \
+       -F "emojiType=clap" \
+       -F "emojiImage=@/path/to/emoji.png"
+     ```
+   - JavaScript (fetch) example:
+     ```javascript
+     const fd = new FormData();
+     fd.append('emojiType', 'clap');
+     fd.append('emojiImage', fileInput.files[0]); // File object, not a string
+
+     await fetch('http://localhost:3001/fan-engagement/emoji/v1/upload', {
+       method: 'POST',
+       headers: { Authorization: `Bearer ${token}` }, // Don't set Content-Type manually
+       body: fd
+     });
+     ```
+   - Axios example:
+     ```javascript
+     const fd = new FormData();
+     fd.append('emojiType', 'clap');
+     fd.append('emojiImage', file); // File or Blob, not a string/path
+
+     await axios.post('http://localhost:3001/fan-engagement/emoji/v1/upload', fd, {
+       headers: {
+         Authorization: `Bearer ${token}`,
+         'Content-Type': 'multipart/form-data'
+       }
+     });
+     ```
+   - Common error (422): If you see
+     `Value error, Expected UploadFile, received: <class 'str'> for field 'emojiImage'`
+     it means the request sent a string value for `emojiImage` instead of a file. Use one of the examples above to send a true file via multipart/form-data.
 
 ## Pagination
 

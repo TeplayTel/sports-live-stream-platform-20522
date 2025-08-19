@@ -28,6 +28,7 @@ from src.database.models import (
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 # PUBLIC_INTERFACE
 def generate_uuid_mappings():
     """
@@ -90,8 +91,11 @@ def generate_uuid_mappings():
             'sarahw': uuid.uuid4(),
             'mikeb': uuid.uuid4(),
             'emmag': uuid.uuid4(),
-        }
+        },
+        # Will be filled during seeding of match events; maps human-readable event keys to UUIDs
+        'event_keys_to_ids': {}
     }
+
 
 # PUBLIC_INTERFACE
 async def seed_database():
@@ -112,36 +116,42 @@ async def seed_database():
                 return
         except Exception as e:
             print(f"⚠️ Could not check existing data: {e}")
+            # IMPORTANT: Roll back to clear failed transaction state to avoid 'current transaction is aborted'
+            try:
+                await session.rollback()
+            except Exception as rb_e:
+                print(f"⚠️ Rollback after failed existence check also failed: {rb_e}")
             print("Proceeding with seeding...")
-        
+
         # Generate UUID mappings for all entities
         uuid_mappings = generate_uuid_mappings()
-        
-        # Seed emoji assets first
-        await seed_emojis(session, uuid_mappings)
-        
-        # Seed teams
-        await seed_teams(session, uuid_mappings)
-        
-        # Seed events
-        await seed_events(session, uuid_mappings)
-        
-        # Seed matches
-        await seed_matches(session, uuid_mappings)
-        
-        # Seed users
-        await seed_users(session, uuid_mappings)
-        
-        # Seed match events
-        await seed_match_events(session, uuid_mappings)
-        
-        # Seed highlights
-        await seed_highlights(session, uuid_mappings)
-        
-        # Seed user emoji reactions
-        await seed_user_emoji_reactions(session, uuid_mappings)
+
+        # Execute each step with robust error handling so the session is never left in a broken state
+        async def run_step(step_name: str, coro):
+            try:
+                await coro
+                print(f"✅ {step_name} completed")
+            except Exception as step_err:
+                print(f"❌ {step_name} failed: {step_err}")
+                try:
+                    await session.rollback()
+                    print(f"↩️ Rolled back transaction for {step_name}")
+                except Exception as rb_err:
+                    print(f"⚠️ Rollback failed for {step_name}: {rb_err}")
+                # Re-raise so startup can log the failure but continue serving (as coded in main.py)
+                raise
+
+        await run_step("Emoji assets seeding", seed_emojis(session, uuid_mappings))
+        await run_step("Teams seeding", seed_teams(session, uuid_mappings))
+        await run_step("Events seeding", seed_events(session, uuid_mappings))
+        await run_step("Matches seeding", seed_matches(session, uuid_mappings))
+        await run_step("Users seeding", seed_users(session, uuid_mappings))
+        await run_step("Match events seeding", seed_match_events(session, uuid_mappings))
+        await run_step("Highlights seeding", seed_highlights(session, uuid_mappings))
+        await run_step("User emoji reactions seeding", seed_user_emoji_reactions(session, uuid_mappings))
         
         print("✅ Database seeding completed successfully!")
+
 
 async def seed_emojis(session: AsyncSession, uuid_mappings: dict):
     """Seed emoji assets using UUID mappings"""
@@ -222,9 +232,14 @@ async def seed_emojis(session: AsyncSession, uuid_mappings: dict):
         reverse_key = next(k for k, v in uuid_mappings['emojis'].items() if v == emoji_data["emoji_id"])
         emojis[reverse_key] = emoji
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     print(f"   ✅ Added {len(emojis_data)} emoji assets")
     return emojis
+
 
 async def seed_teams(session: AsyncSession, uuid_mappings: dict):
     """Seed teams using UUID mappings"""
@@ -297,9 +312,14 @@ async def seed_teams(session: AsyncSession, uuid_mappings: dict):
         reverse_key = next(k for k, v in uuid_mappings['teams'].items() if v == team_data["team_id"])
         teams[reverse_key] = team
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     print(f"   ✅ Added {len(teams_data)} teams")
     return teams
+
 
 async def seed_events(session: AsyncSession, uuid_mappings: dict):
     """Seed events using UUID mappings"""
@@ -355,9 +375,14 @@ async def seed_events(session: AsyncSession, uuid_mappings: dict):
         reverse_key = next(k for k, v in uuid_mappings['events'].items() if v == event_data["event_id"])
         events[reverse_key] = event
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     print(f"   ✅ Added {len(events_data)} events")
     return events
+
 
 async def seed_matches(session: AsyncSession, uuid_mappings: dict):
     """Seed matches using UUID mappings"""
@@ -578,9 +603,14 @@ async def seed_matches(session: AsyncSession, uuid_mappings: dict):
         reverse_key = next(k for k, v in uuid_mappings['matches'].items() if v == match_data["match_id"])
         matches[reverse_key] = match
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     print(f"   ✅ Added {len(matches_data)} matches")
     return matches
+
 
 async def seed_users(session: AsyncSession, uuid_mappings: dict):
     """Seed sample users using UUID mappings"""
@@ -680,9 +710,14 @@ async def seed_users(session: AsyncSession, uuid_mappings: dict):
         session.add(user)
         users[user_data["username"]] = user
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     print(f"   ✅ Added {len(users_data)} users")
     return users
+
 
 async def seed_match_events(session: AsyncSession, uuid_mappings: dict):
     """Seed match events (goals, cards, substitutions, etc.) using UUID mappings"""
@@ -841,13 +876,32 @@ async def seed_match_events(session: AsyncSession, uuid_mappings: dict):
             "description": "Goal! Late equalizer from Danny Welbeck"
         }
     ]
+
+    # Build reverse lookup from match UUID to code like 'MATCH001'
+    match_uuid_to_code = {v: k for k, v in uuid_mappings['matches'].items()}
+    # Get event key map (event_key -> event UUID) to be used by reaction seeding
+    event_key_map = uuid_mappings.get('event_keys_to_ids', {}) or {}
     
     for event_data in match_events_data:
         match_event = MatchEventDB(**event_data)
         session.add(match_event)
-    
-    await session.commit()
+
+        # Compute a stable event key, e.g., MATCH001_GOAL_15
+        match_code = match_uuid_to_code.get(event_data["match_id"], "UNKNOWN_MATCH")
+        event_key = f"{match_code}_{event_data['event_type'].upper()}_{event_data['minute']}"
+        event_key_map[event_key] = event_data["event_id"]
+
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+    # Persist the mapping for downstream usage
+    uuid_mappings['event_keys_to_ids'] = event_key_map
+
     print(f"   ✅ Added {len(match_events_data)} match events")
+
 
 async def seed_highlights(session: AsyncSession, uuid_mappings: dict):
     """Seed highlights using UUID mappings"""
@@ -926,11 +980,20 @@ async def seed_highlights(session: AsyncSession, uuid_mappings: dict):
         highlight = HighlightDB(**highlight_data)
         session.add(highlight)
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     print(f"   ✅ Added {len(highlights_data)} highlights")
 
+
 async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
-    """Seed user emoji reactions to match events using UUID mappings"""
+    """Seed user emoji reactions to match events using UUID mappings
+    
+    Ensures event_id is a proper UUID (as per schema), mapping known event keys to their UUIDs and
+    generating UUIDs for general events. This fixes previous type mismatches that could abort transactions.
+    """
     print("😍 Seeding user emoji reactions...")
     
     # Create realistic emoji reactions for various match events
@@ -967,6 +1030,9 @@ async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
     ])
     
     user_list = list(uuid_mappings['users'].keys())
+
+    # Use the event key mapping built during match event seeding; if not present, initialize.
+    event_key_map = uuid_mappings.get('event_keys_to_ids', {}) or {}
     
     for match_event in match_events:
         # Each event gets reactions from multiple users
@@ -974,11 +1040,17 @@ async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
         for _ in range(num_reactions):
             user_key = random.choice(user_list)
             emoji_key = random.choice(match_event["popular_emojis"])
+
+            # Resolve a UUID for the event key (must be UUID to match DB schema)
+            event_uuid = event_key_map.get(match_event["event"])
+            if event_uuid is None:
+                event_uuid = uuid.uuid4()
+                event_key_map[match_event["event"]] = event_uuid
             
             reaction_data = {
                 "reaction_id": uuid.uuid4(),
                 "user_id": uuid_mappings['users'][user_key],
-                "event_id": match_event["event"],
+                "event_id": event_uuid,
                 "emoji_id": uuid_mappings['emojis'][emoji_key]
             }
             reactions_data.append(reaction_data)
@@ -987,12 +1059,18 @@ async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
     for _ in range(50):
         user_key = random.choice(user_list)
         emoji_key = random.choice(list(uuid_mappings['emojis'].keys()))
-        event_id = f"GENERAL_EVENT_{random.randint(1000, 9999)}"
+        event_key = f"GENERAL_EVENT_{random.randint(1000, 9999)}"
+
+        # Ensure consistent UUID per general event key (so reactions for the same key match)
+        event_uuid = event_key_map.get(event_key)
+        if event_uuid is None:
+            event_uuid = uuid.uuid4()
+            event_key_map[event_key] = event_uuid
         
         reaction_data = {
             "reaction_id": uuid.uuid4(),
             "user_id": uuid_mappings['users'][user_key],
-            "event_id": event_id,
+            "event_id": event_uuid,
             "emoji_id": uuid_mappings['emojis'][emoji_key]
         }
         reactions_data.append(reaction_data)
@@ -1001,8 +1079,17 @@ async def seed_user_emoji_reactions(session: AsyncSession, uuid_mappings: dict):
         reaction = UserEmojiReactionDB(**reaction_data)
         session.add(reaction)
     
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+    # Update mapping in case it's used downstream
+    uuid_mappings['event_keys_to_ids'] = event_key_map
+
     print(f"   ✅ Added {len(reactions_data)} user emoji reactions")
+
 
 # CLI script entry point
 if __name__ == "__main__":

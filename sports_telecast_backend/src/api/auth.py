@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Body, Request, Depends
 from passlib.context import CryptContext
 
-from ..models.user import UserLogin, UserResponse, TokenData, UserUpdate
+from ..models.user import UserLogin, UserResponse, TokenData, UserUpdate, UserCreate
 from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
@@ -37,6 +37,78 @@ async def login_user(
         token_type="bearer",
         expires_in=86400,
         user=user_response
+    )
+
+# PUBLIC_INTERFACE
+@router.post(
+    "/register",
+    response_model=TokenData,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register new user",
+    description="Registers a new user with email, username, and password. Returns an access token and user info.",
+    responses={
+        201: {"description": "User created and token returned"},
+        409: {"description": "Email or username already registered"},
+        422: {"description": "Validation error"},
+    },
+)
+async def register_user(
+    user_data: UserCreate = Body(...),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Register a new user account.
+
+    - user_data: UserCreate payload containing email, username, password, and optional full_name
+    - returns: TokenData (mock JWT access token + created user info)
+
+    Validation rules:
+    - Email must be unique
+    - Username must be unique
+    - Password is hashed using bcrypt via passlib
+    """
+    # Local import to avoid circular import at module load and to keep dependency surface small
+    from sqlalchemy.exc import IntegrityError  # noqa: WPS433
+
+    repo = UserRepository(db)
+
+    # Pre-check for duplicate email/username
+    existing_by_email = await repo.get_user_by_email(user_data.email)
+    if existing_by_email:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    existing_by_username = await repo.get_user_by_username(user_data.username)
+    if existing_by_username:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already taken",
+        )
+
+    # Hash the password
+    password_hash = pwd_context.hash(user_data.password)
+
+    # Attempt to create user; handle race-condition via integrity error
+    try:
+        created_user = await repo.create_user(user_data, password_hash)
+    except IntegrityError:
+        # Rollback the transaction to clean the session state
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User already exists",
+        )
+
+    # Build response token and user payload
+    user_response = convert_user_db_to_response(created_user)
+    return TokenData(
+        access_token=get_mock_bearer_token(),
+        token_type="bearer",
+        expires_in=86400,
+        user=user_response,
     )
 
 # PUBLIC_INTERFACE

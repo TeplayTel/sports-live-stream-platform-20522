@@ -11,11 +11,15 @@ Goals:
 - Backfill best-effort without blocking migration on any failure (do-no-harm).
 - Provide verbose logs to diagnose partial states or environment issues.
 - Ensure no implicit transaction ROLLBACK by isolating failures inside SAVEPOINTs.
+- Add final on-exit diagnostics that dump full traceback, locals, transaction state,
+  and current Alembic version, then re-raise any detected error to surface true
+  ROLLBACK cause.
 """
 from alembic import op, context
 import sqlalchemy as sa
 from sqlalchemy import text
 import os
+import traceback
 from typing import Callable, Optional
 
 
@@ -29,6 +33,105 @@ depends_on = None
 def _log(msg: str) -> None:
     """Lightweight diagnostic logger for this migration."""
     print(f"[005_image_url_migration] {msg}")
+
+
+def _safe_repr(obj, max_len: int = 1200) -> str:
+    """Return a safe, length-limited repr for logging arbitrary objects."""
+    try:
+        s = repr(obj)
+    except Exception as e:
+        return f"<unreprable {type(obj).__name__}: {e}>"
+    if len(s) > max_len:
+        return s[: max_len - 20] + "... (truncated)"
+    return s
+
+
+def _log_tb_locals(tb) -> None:
+    """
+    Walk the traceback and print function, file, line, and a sanitized snapshot
+    of local variables for each frame. This can be verbose by design.
+    """
+    try:
+        idx = 0
+        while tb:
+            f = tb.tb_frame
+            code = f.f_code
+            co_name = code.co_name
+            filename = code.co_filename
+            lineno = tb.tb_lineno
+            _log(f"TRACEBACK FRAME[{idx}]: {co_name} at {filename}:{lineno}")
+            try:
+                # Sanitize locals to strings using safe repr
+                loc_dump = {k: _safe_repr(v) for k, v in f.f_locals.items()}
+            except Exception as e:
+                _log(f"TRACEBACK FRAME[{idx}] locals: <error capturing locals: {e}>")
+            else:
+                # Pretty print locals
+                for k, v in loc_dump.items():
+                    _log(f"  LOCAL {k} = {v}")
+            tb = tb.tb_next
+            idx += 1
+    except Exception as e:
+        _log(f"ERROR while logging traceback locals: {e}")
+
+
+def _log_exception_context(exc: BaseException, bind=None, note: Optional[str] = None) -> None:
+    """
+    Log full exception context:
+    - note
+    - exception type and message
+    - full traceback string
+    - per-frame locals from traceback
+    - transaction state
+    - attempt to read Alembic current version
+    """
+    if note:
+        _log(f"ON-EXIT NOTE: {note}")
+
+    _log(f"ON-EXIT EXC TYPE: {type(exc).__name__}")
+    _log(f"ON-EXIT EXC MSG: {exc}")
+
+    # Full traceback string
+    try:
+        tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        _log("ON-EXIT TRACEBACK BEGIN >>>")
+        for line in tb_str.rstrip("\n").split("\n"):
+            _log(line)
+        _log("<<< ON-EXIT TRACEBACK END")
+    except Exception as e:
+        _log(f"ON-EXIT: error while formatting traceback: {e}")
+
+    # Per-frame locals dump
+    try:
+        _log("ON-EXIT: Dumping traceback frame locals for context...")
+        _log_tb_locals(exc.__traceback__)
+    except Exception as e:
+        _log(f"ON-EXIT: error while dumping traceback locals: {e}")
+
+    # Transaction state
+    try:
+        _log_tx_state(bind, note="on-exit-exception")  # may log inspection error if bind None
+    except Exception as e:
+        _log(f"ON-EXIT: error while logging tx state: {e}")
+
+    # Current Alembic version (best effort)
+    try:
+        if bind is not None:
+            try:
+                res = bind.execute(text("SELECT version_num FROM alembic_version"))
+                row = res.fetchone()
+                try:
+                    res.close()
+                except Exception:
+                    pass
+                current_version = row[0] if row and len(row) > 0 else getattr(row, "version_num", None)
+                _log(f"ON-EXIT: Alembic version (current): {current_version}")
+            except Exception as e:
+                _log(f"ON-EXIT: unable to read alembic_version: {e}")
+        else:
+            _log("ON-EXIT: No bind available to read alembic_version.")
+    except Exception as e:
+        _log(f"ON-EXIT: unexpected error while logging Alembic version: {e}")
 
 
 def _table_exists(connection, table_name: str) -> bool:
@@ -52,8 +155,9 @@ def _column_exists(connection, table_name: str, column_name: str) -> bool:
     """
     try:
         insp = sa.inspect(connection)
-        cols = [c["name"] for c in insp.get_columns(table_name)]
-        exists = column_name in cols
+        cols = [{"name": c.get("name")} for c in insp.get_columns(table_name)]
+        names = [c["name"] for c in cols]
+        exists = column_name in names
         _log(f"Column '{table_name}.{column_name}' exists: {exists}")
         return exists
     except Exception as e:
@@ -344,11 +448,16 @@ def upgrade():
     - Offline mode: emit IF EXISTS/IF NOT EXISTS SQL to add image_url; skip backfill (no DB access).
     - Online mode: no-op if table missing; add column if missing; best-effort backfill where image_url is NULL.
     - All risky operations (DDL/DML) are run in SAVEPOINTs so that any failure does not poison the outer transaction.
-    - Always returns without raising so Alembic can commit if there were no outer errors.
+    - At function exit, a catch-all finally block logs traceback, locals, transaction state, and current Alembic version.
+    - If any error is detected during the upgrade, it will be re-raised from the finally block to surface true ROLLBACK cause.
     """
     _log("upgrade() starting.")
+    fatal_exc: Optional[BaseException] = None
+    bind = None  # Keep for on-exit diagnostics
+    offline = False
+
     try:
-        offline = False
+        # Discover offline/online mode
         try:
             offline = context.is_offline_mode()
             _log(f"context.is_offline_mode() -> {offline}")
@@ -357,10 +466,12 @@ def upgrade():
             offline = False
 
         if offline:
+            # All DDL emitted in offline branch contained within try scope
             _add_image_url_column_offline()
             _log("Offline upgrade completed. Exiting upgrade() early for offline mode.")
             return
 
+        # Online mode begins
         bind = op.get_bind()
         if bind is None:
             _log("Error: op.get_bind() returned None; cannot proceed in online mode. Exiting upgrade().")
@@ -398,20 +509,59 @@ def upgrade():
 
         # Final probe to surface any commit-time or deferred errors before Alembic updates
         # the version table. Any error is re-raised to expose the true cause in logs.
-        try:
-            _final_commit_probe_or_raise(bind)
-        except Exception as probe_exc:
-            _log(f"FINAL-PROBE escalation in upgrade(): {probe_exc}")
-            raise
+        _final_commit_probe_or_raise(bind)
 
         _log("Upgrade operations completed without unhandled exceptions, final probe passed.")
         _log("Alembic will now update the version table and commit the migration transaction.")
         _log("If a ROLLBACK still occurs after this point, compare the txid/isolation logs above with DB logs.")
-    except Exception as fatal:
-        # Absolute last-resort catch to avoid aborting Alembic flow; we still log for diagnosis
-        _log(f"FATAL: Unexpected exception escaped upgrade(): {fatal}. Migration will likely ROLLBACK.")
-        # Intentionally do not re-raise
+    except Exception as e:
+        fatal_exc = e
+        _log(f"FATAL: Exception captured in upgrade(): {e}")
+        # Do not re-raise here; we want the finally block to run and log everything first.
     finally:
+        # On-exit diagnostics: log tx state and alembic version, plus full exception context if any
+        _log("upgrade() on-exit diagnostics starting...")
+        try:
+            # Attempt to acquire a bind if missing (best-effort)
+            if bind is None:
+                try:
+                    bind = op.get_bind()
+                except Exception as e2:
+                    _log(f"ON-EXIT: could not obtain bind via op.get_bind(): {e2}")
+
+            # Transaction state
+            try:
+                _log_tx_state(bind, note="on-exit")
+            except Exception as e3:
+                _log(f"ON-EXIT: error while logging transaction state: {e3}")
+
+            # Current Alembic version (even in success case, helpful for traceability)
+            if bind is not None:
+                try:
+                    res = bind.execute(text("SELECT version_num FROM alembic_version"))
+                    row = res.fetchone()
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+                    current_version = row[0] if row and len(row) > 0 else getattr(row, "version_num", None)
+                    _log(f"ON-EXIT: Alembic version (pre-exit): {current_version}")
+                except Exception as e4:
+                    _log(f"ON-EXIT: unable to read alembic_version: {e4}")
+            else:
+                _log("ON-EXIT: No bind available to read alembic_version.")
+        except Exception as e:
+            _log(f"ON-EXIT: unexpected error during diagnostics: {e}")
+
+        # If there was an error, dump full exception context and re-raise to surface root cause
+        if fatal_exc is not None:
+            try:
+                _log_exception_context(fatal_exc, bind=bind, note="upgrade() failure")
+            except Exception as le:
+                _log(f"ON-EXIT: error while logging exception context: {le}")
+            _log("ON-EXIT: re-raising fatal exception to force visibility of true ROLLBACK cause.")
+            raise fatal_exc
+
         _log("upgrade() finally reached; exiting upgrade().")
 
 

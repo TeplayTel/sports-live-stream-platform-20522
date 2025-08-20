@@ -28,21 +28,27 @@ from pathlib import Path
 # Other env vars (POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, etc.) are NOT parsed and not required for backend startup.
 # The .env file may contain these, but only the full connection string var is used.
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
-print("===============DATABASE_URL at runtime:", DATABASE_URL)
-print("[DEBUG] DATABASE_URL used by BE:", DATABASE_URL)
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection.\n"
-        "No database username provided. By default, the system expects the role/user 'appuser'.\n"
-        "If you see errors referring to 'role \"kavia\" does not exist', you have not set your env vars correctly, "
-        "or are using the wrong username in your connection string.\n"
-        "Update your .env to match the correct username and see .env.example for reference.\n"
-        "Hardcoded database connection or localhost with the wrong user is not supported.\n"
-        "Please contact support if you see this error in production."
-    )
+# Resolve the database URL from environment variables with sane defaults suitable for local dev.
+# Priority:
+#   1) DATABASE_URL (full URL)
+#   2) POSTGRES_URL (full URL)
+#   3) Construct from POSTGRES_* parts (defaults set for local dev)
+full_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+if not full_url:
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    # Default to 5001 to match the running database container's exposed port
+    port = os.environ.get("POSTGRES_PORT", "5001")
+    dbname = os.environ.get("POSTGRES_DB", "sports_telecast")
+    user = os.environ.get("POSTGRES_USER", "appuser")
+    password = os.environ.get("POSTGRES_PASSWORD", "dbuser123")
+    full_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
-# If the DATABASE_URL is not already async, convert it (SQLAlchemy async format)
+# Normalize and derive async URL
+if full_url.startswith("postgres://"):
+    DATABASE_URL = full_url.replace("postgres://", "postgresql://", 1)
+else:
+    DATABASE_URL = full_url
+
 if DATABASE_URL.startswith("postgresql://"):
     ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgresql+asyncpg://"):
@@ -50,7 +56,7 @@ elif DATABASE_URL.startswith("postgresql+asyncpg://"):
 else:
     raise ValueError(
         "Unknown database connection string format. "
-        "Expected postgresql:// or postgresql+asyncpg://"
+        "Expected postgres://, postgresql:// or postgresql+asyncpg://"
     )
 
 # For sync operations and Alembic migrations

@@ -10,8 +10,9 @@ from alembic import context
 from src.database.connection import Base
 # Import all models to ensure they are registered with SQLAlchemy
 from src.database.models import (  # noqa: F401 - Import needed for Alembic model discovery
-    UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
-    EmojiAssetDB, UserEmojiReactionDB, HighlightDB
+    UserDB, TeamDB, EventDB, MatchDB, MatchEventDB,
+    EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
+    UserProfileDB, ScheduleDB, ScheduleMatchDB
 )
 
 # this is the Alembic Config object, which provides
@@ -53,7 +54,7 @@ def get_url():
 
     # Fallback to individual POSTGRES_* env vars
     DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-    DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+    DB_PORT = os.getenv("POSTGRES_PORT", "5001")
     DB_NAME = os.getenv("POSTGRES_DB", "sports_telecast")
     DB_USER = os.getenv("POSTGRES_USER", "postgres")
     DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")

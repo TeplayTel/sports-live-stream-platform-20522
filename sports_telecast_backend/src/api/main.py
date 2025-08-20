@@ -50,7 +50,8 @@ async def lifespan(app: FastAPI):
         logger.info("🔗 Initializing database connection...")
         await init_database()
 
-        # Always run migrations on startup before any seeding
+        # NOTE: We rely on Alembic for schema management. Direct create_all() table creation
+        # has been removed to avoid conflicts with migrations and enum/type management.
         try:
             from ..database import run_migrations
             logger.info("🛠️ Running database migrations (alembic upgrade head)...")
@@ -63,7 +64,7 @@ async def lifespan(app: FastAPI):
         if await check_database_connection():
             logger.info("✅ Database connection established successfully")
 
-            # Conditionally trigger database seeding based on env var
+            # Conditionally trigger database seeding
             try:
                 should_seed = str(os.getenv("SEED_DB", os.getenv("ENABLE_SEEDING", ""))).strip().lower() in (
                     "1", "true", "yes", "on", "y", "t"
@@ -82,7 +83,6 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
-        # Graceful degradation
 
     yield
 

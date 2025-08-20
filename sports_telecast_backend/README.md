@@ -63,21 +63,25 @@ The backend connects to a PostgreSQL database, using environment variables found
 - Set `POSTGRES_HOST` to the database service name (e.g. `sports_telecast_db`).
 - Example:
   ```
-  DATABASE_URL=postgresql://appuser:dbuser123@sports_telecast_db:5000/myapp
+  DATABASE_URL=postgresql://appuser:dbuser123@sports_telecast_db:5001/myapp
   ```
 - The default DB user/role is `appuser`. There is **no** `kavia` user/role, so never use it in your settings.
 
 **If developing directly on localhost (no container):**
 - Use `localhost` for the host fields.
   ```
-  DATABASE_URL=postgresql://appuser:dbuser123@localhost:5000/myapp
+  DATABASE_URL=postgresql://appuser:dbuser123@localhost:5001/myapp
   ```
-- The default database port is `5000` as set in the included DB setup scripts.
+- The default database port is `5001` to match the running database container.
 
 **Environment Template:** see `.env.example` for the correct configuration.
 
 **Do not use the 'kavia' user as it does not exist on the default dev database. Use only 'appuser'.**  
 If you change database user or password, make sure to update both the database container and this backend.
+
+Schema management:
+- The app relies on Alembic migrations only. Direct SQLAlchemy table creation at startup has been removed to avoid conflicts.
+- Migrations are run automatically on startup; they are safe to call repeatedly.
 
 ## 📚 API Documentation
 
@@ -250,12 +254,12 @@ JWT_SECRET_KEY=your-super-secret-jwt-key
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
 # Database connection string (see explanation above)
-DATABASE_URL=postgresql://appuser:dbuser123@localhost:5000/myapp
+DATABASE_URL=postgresql://appuser:dbuser123@localhost:5001/myapp
 
 POSTGRES_USER=appuser
 POSTGRES_PASSWORD=dbuser123
 POSTGRES_DB=myapp
-POSTGRES_PORT=5000
+POSTGRES_PORT=5001
 
 # External Services
 CDN_BASE_URL=https://cdn.mydomain.com

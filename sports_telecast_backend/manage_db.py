@@ -7,6 +7,7 @@ Provides safe operations to:
 - Clear Alembic advisory locks (by lock key)
 - Reset alembic_version to a known-good base
 - Run Alembic migrations (upgrade/stamp)
+- Diagnose and repair initial migration (001)
 - Create/drop tables directly from ORM (for dev-only)
 
 Usage:
@@ -15,6 +16,8 @@ Usage:
   python manage_db.py alembic-reset
   python manage_db.py alembic-stamp-base
   python manage_db.py alembic-upgrade [revision]
+  python manage_db.py diagnose-initial
+  python manage_db.py repair-initial [lock_key]
   python manage_db.py create
   python manage_db.py drop
 """
@@ -42,6 +45,9 @@ def main(argv: list[str]) -> None:
         alembic-reset: Reset alembic_version table (truncate) so migrations can re-apply cleanly.
         alembic-stamp-base: Stamp the database at 'base' (no migrations applied) without running scripts.
         alembic-upgrade [revision]: Run Alembic upgrade to the specified revision (default 'head').
+        diagnose-initial: Inspect locks, alembic_version, and initial (001) schema tables with prominent logs.
+        repair-initial [lock_key]: Force-clear advisory locks, repair alembic_version if inconsistent, and re-apply
+            the '001' initial migration only when safe (no initial tables exist). Prominently logs actions/results.
         create: Create all tables using ORM metadata (dev only).
         drop: Drop all tables using ORM metadata (dev only).
     """
@@ -63,13 +69,15 @@ def main(argv: list[str]) -> None:
         return
 
     # Lazy imports for Alembic/maintenance to avoid import cost for simple ops
-    if cmd in {"locks", "clear-locks", "alembic-reset", "alembic-stamp-base", "alembic-upgrade"}:
+    if cmd in {"locks", "clear-locks", "alembic-reset", "alembic-stamp-base", "alembic-upgrade", "diagnose-initial", "repair-initial"}:
         from src.database.maintenance import (
             inspect_locks,
             clear_advisory_lock_holders,
             alembic_reset,
             alembic_stamp_base,
             alembic_upgrade,
+            diagnose_initial_state,
+            repair_initial_migration,
         )
 
         if cmd == "locks":
@@ -101,6 +109,21 @@ def main(argv: list[str]) -> None:
             revision = arg or "head"
             alembic_upgrade(revision)
             print(f"Alembic upgrade to {revision} complete.")
+            return
+
+        if cmd == "diagnose-initial":
+            result = diagnose_initial_state()
+            print("Diagnosis complete. Summary:")
+            for k, v in result.items():
+                print(f"- {k}: {v}")
+            return
+
+        if cmd == "repair-initial":
+            lock_key = arg  # optional
+            result = repair_initial_migration(lock_key=lock_key)
+            print("Repair process summary:")
+            for k, v in result.items():
+                print(f"- {k}: {v}")
             return
 
     print(f"Unknown command: {cmd}")

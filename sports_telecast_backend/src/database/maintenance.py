@@ -5,6 +5,7 @@ This module provides utilities to:
 - Inspect Postgres locks (including advisory locks)
 - Clear/terminate sessions holding a specific advisory lock key
 - Reset alembic_version safely and (re)apply migrations
+- Diagnose and repair initial migration issues (001)
 
 These functions are used by manage_db.py. They rely on env vars:
 - DATABASE_URL or POSTGRES_URL
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Set
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -167,3 +168,211 @@ def alembic_upgrade(revision: str = "head") -> None:
     """
     cfg = _alembic_config()
     command.upgrade(cfg, revision)
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    """
+    Helper: check if a table exists in the current database schema.
+    """
+    res = conn.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = :t
+            )
+            """
+        ),
+        {"t": table_name},
+    ).scalar()
+    return bool(res)
+
+
+def _fetch_alembic_versions(conn) -> List[str]:
+    """
+    Helper: fetch all revision ids from alembic_version (typically 0 or 1 row).
+    """
+    exists = conn.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='alembic_version'
+            )
+            """
+        )
+    ).scalar()
+    if not exists:
+        return []
+    rows = conn.execute(text("SELECT version_num FROM alembic_version")).fetchall()
+    return [r[0] for r in rows]
+
+
+def _initial_expected_tables() -> Set[str]:
+    """
+    List of tables expected from the 001 initial migration.
+    """
+    return {
+        "users",
+        "teams",
+        "events",
+        "emoji_assets",
+        "matches",
+        "user_emoji_reactions",
+        "highlights",
+        "match_events",
+    }
+
+
+def _inspect_initial_schema(conn) -> Dict[str, Any]:
+    """
+    Check presence of tables expected from initial migration.
+    """
+    expected = _initial_expected_tables()
+    present: Set[str] = set()
+    missing: Set[str] = set()
+    for t in expected:
+        if _table_exists(conn, t):
+            present.add(t)
+        else:
+            missing.add(t)
+    return {
+        "expected_tables": sorted(list(expected)),
+        "present_tables": sorted(list(present)),
+        "missing_tables": sorted(list(missing)),
+        "all_absent": len(present) == 0,
+        "all_present": len(missing) == 0,
+        "partial": (len(present) > 0 and len(missing) > 0),
+    }
+
+
+# PUBLIC_INTERFACE
+def diagnose_initial_state(engine: Engine = sync_engine) -> Dict[str, Any]:
+    """
+    Diagnose current DB state related to advisory locks and initial migration (001).
+
+    Returns:
+        Dict with:
+            - lock_summary: details of advisory/blocked sessions
+            - alembic_versions: list of version rows (can be empty if table doesn't exist)
+            - initial_schema_summary: presence of 001 tables and partial state flags
+    """
+    print("==== Diagnose: Inspecting Postgres for locks and initial migration state ====")
+    lock_summary = inspect_locks(engine=engine)
+    print(f"Locks -> advisory_locks_count={lock_summary['advisory_locks_count']} blocked_sessions_count={lock_summary['blocked_sessions_count']}")
+    with engine.connect() as conn:
+        versions = _fetch_alembic_versions(conn)
+        print(f"Alembic versions row(s): {versions if versions else 'None'}")
+        schema_summary = _inspect_initial_schema(conn)
+        print(f"Initial schema present tables: {schema_summary['present_tables']}")
+        print(f"Initial schema missing tables: {schema_summary['missing_tables']}")
+        if schema_summary["partial"]:
+            print("WARNING: Partial initial schema detected (some tables present, some missing).")
+    return {
+        "lock_summary": lock_summary,
+        "alembic_versions": versions,
+        "initial_schema_summary": schema_summary,
+    }
+
+
+# PUBLIC_INTERFACE
+def repair_initial_migration(lock_key: Optional[str] = None, engine: Engine = sync_engine) -> Dict[str, Any]:
+    """
+    Diagnose and attempt repair of the initial migration (001) and clear advisory locks.
+
+    Strategy:
+    1) Inspect and log advisory locks and blocked sessions.
+    2) Forcibly clear advisory lock holders using ALEMBIC_ADVISORY_LOCK_KEY (or provided lock_key).
+    3) Analyze alembic_version and presence of initial migration tables.
+    4) If alembic_version is inconsistent or partial AND there are no initial tables present,
+       reset alembic_version, stamp base, and run alembic upgrade to '001'.
+       If partial initial tables are present, we will NOT attempt to re-create 001 tables to avoid
+       collisions; instead we will stamp to '001' if needed and log the manual remediation guidance.
+    5) Log all actions prominently for diagnosis.
+
+    Returns:
+        Dict summary of actions and final state.
+    """
+    print("=======================================================================")
+    print("🔧 Repair: Inspecting and repairing initial migration (001) if needed")
+    print("=======================================================================")
+
+    # 1) Inspect locks/state
+    state_before = diagnose_initial_state(engine=engine)
+
+    # 2) Clear advisory locks
+    print("---- Clearing advisory lock holders (if any) ----")
+    clear_result = clear_advisory_lock_holders(lock_key=lock_key, engine=engine)
+    print(f"Advisory lock key: {clear_result['lock_key']}")
+    print(f"Terminated PIDs: {clear_result['terminated_pids']}")
+    if clear_result["errors"]:
+        print(f"Terminate errors: {clear_result['errors']}")
+
+    # 3) Re-check alembic_version and initial schema
+    print("---- Re-checking Alembic version and initial schema state ----")
+    with engine.begin() as conn:
+        versions = _fetch_alembic_versions(conn)
+        schema_summary = _inspect_initial_schema(conn)
+
+    print(f"Alembic versions row(s) now: {versions if versions else 'None'}")
+    print(f"Present initial tables: {schema_summary['present_tables']}")
+    print(f"Missing initial tables: {schema_summary['missing_tables']}")
+
+    action_taken = []
+    upgrade_status = {"applied_001": False, "error": None, "note": ""}
+
+    # 4) Decide and act
+    try:
+        if schema_summary["all_absent"]:
+            print("No initial tables present; safe to reset and re-apply 001.")
+            alembic_reset()
+            print("Alembic version table truncated (if existed).")
+            alembic_stamp_base()
+            print("Alembic stamped to base.")
+            alembic_upgrade("001")
+            print("✅ Alembic upgraded to '001' successfully.")
+            upgrade_status["applied_001"] = True
+            action_taken += ["alembic_reset", "alembic_stamp_base", "alembic_upgrade_001"]
+        elif schema_summary["partial"]:
+            print("⚠️ Partial initial migration detected. NOT re-applying 001 to avoid DDL conflicts.")
+            if "001" not in versions:
+                # Stamp to 001 if not already
+                alembic_stamp_base()
+                print("Stamped base; stamping 001 to sync alembic_version with existing partial schema.")
+                cfg = _alembic_config()
+                command.stamp(cfg, "001")
+                action_taken += ["alembic_stamp_base", "alembic_stamp_001"]
+            upgrade_status["note"] = (
+                "Partial initial schema detected. Skipped re-applying 001 to avoid table conflicts. "
+                "Consider manually dropping conflicting tables or restoring from backup, then rerun."
+            )
+        else:
+            # all_present
+            print("Initial tables already present.")
+            if "001" not in versions:
+                print("Alembic version not at 001; stamping to 001 for consistency.")
+                alembic_stamp_base()
+                cfg = _alembic_config()
+                command.stamp(cfg, "001")
+                action_taken += ["alembic_stamp_base", "alembic_stamp_001"]
+            else:
+                print("Alembic version indicates 001 already applied. No action needed on 001.")
+    except Exception as e:
+        upgrade_status["error"] = str(e)
+        print(f"❌ Error while attempting to repair/apply 001: {e}")
+
+    # 5) Summarize final state
+    print("---- Final state summary ----")
+    final_state = diagnose_initial_state(engine=engine)
+
+    print("=======================================================================")
+    print("Repair operation completed.")
+    print("=======================================================================")
+
+    return {
+        "state_before": state_before,
+        "clear_result": clear_result,
+        "actions": action_taken,
+        "apply_001_result": upgrade_status,
+        "state_after": final_state,
+    }

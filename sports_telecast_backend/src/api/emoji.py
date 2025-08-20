@@ -99,7 +99,18 @@ async def list_emojis(
     "/userEmojiReaction",
     response_model=ReactionCapturedResponse,
     summary="Submit emoji reaction",
-    description="Requires Authorization: Bearer <user-token>. Accepts body: {userId, eventId, emojiId, createdAt}.",
+    description=(
+        "Requires Authorization: Bearer <user-token>. "
+        "Accepts body: {userId, eventId, emojiId, emojiType, createdAt}. "
+        "Validates that emojiId exists and its type matches emojiType in emoji_assets."
+    ),
+    responses={
+        200: {"description": "Reaction recorded successfully"},
+        400: {"description": "Bad request (missing fields or type mismatch)"},
+        401: {"description": "Unauthorized"},
+        404: {"description": "Emoji or event not found"},
+        500: {"description": "Internal server error"},
+    },
 )
 async def create_emoji_reaction(
     reaction_request: UserEmojiReactionCaptureRequest = Body(...),
@@ -117,7 +128,11 @@ async def create_emoji_reaction(
       - userId (str): ID of the user submitting the reaction
       - eventId (str): ID of event or match
       - emojiId (str): ID of the emoji
+      - emojiType (str): Emoji type string; must match the emoji asset's type
       - createdAt (str): ISO 8601 timestamp for when the reaction occurred
+
+    Storage:
+      - Records are inserted into the user_emoji_reactions table via repository layer.
 
     Returns:
       - {
@@ -130,12 +145,13 @@ async def create_emoji_reaction(
     user_id: str = reaction_request.userId
     event_id: str = reaction_request.eventId
     emoji_id: str = reaction_request.emojiId
+    emoji_type_input: str = reaction_request.emojiType
     created_at_str: str = reaction_request.createdAt
 
-    if not all([user_id, event_id, emoji_id, created_at_str]):
+    if not all([user_id, event_id, emoji_id, emoji_type_input, created_at_str]):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required fields: userId, eventId, emojiId, createdAt",
+            detail="Missing required fields: userId, eventId, emojiId, emojiType, createdAt",
         )
 
     created_at: datetime = _parse_created_at(created_at_str)
@@ -145,10 +161,28 @@ async def create_emoji_reaction(
     match_repo = MatchRepository(db)
     event_repo = EventRepository(db)
 
-    # Validate emoji exists
+    # Validate emoji exists and emojiType matches DB
     emoji_db = await emoji_repo.get_emoji_by_id(emoji_id)
     if not emoji_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Emoji not found")
+
+    # Normalize types to string for comparison, supporting Enum or str in DB
+    db_type_value = getattr(emoji_db.emoji_type, "value", getattr(emoji_db, "emoji_type", None))
+    db_type_value = (str(db_type_value).lower() if db_type_value is not None else None)
+    input_type_value = str(emoji_type_input).lower()
+
+    if not db_type_value:
+        # Defensive: if DB doesn't expose emoji_type cleanly, treat as server issue
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Emoji type metadata unavailable for validation"
+        )
+
+    if db_type_value != input_type_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"emojiType mismatch for emojiId. Expected '{db_type_value}', received '{input_type_value}'",
+        )
 
     # Validate event/match exists (support either)
     match_db = await match_repo.get_match_by_id(event_id)
@@ -157,6 +191,7 @@ async def create_emoji_reaction(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
     # Persist reaction with provided createdAt
+    # Note: Repository writes to the user_emoji_reactions table (correct target).
     reaction_id = await emoji_repo.add_reaction(
         user_id=user_id,
         event_id=event_id,
@@ -167,10 +202,12 @@ async def create_emoji_reaction(
     # Asynchronously broadcast updated counts (best-effort, non-blocking)
     try:
         summary = await emoji_repo.get_reaction_summary(event_id)
+        # Prepare type string for broadcast (guard for enum)
+        emoji_type_for_broadcast = db_type_value
         emoji_update_data = {
             "event_id": event_id,
             "emoji_id": emoji_id,
-            "emoji_type": emoji_db.emoji_type.value,
+            "emoji_type": emoji_type_for_broadcast,
             "new_count": summary.get("emoji_counts", {}).get(emoji_id, 1),
             "user_id": user_id,
             "reaction_summary": {

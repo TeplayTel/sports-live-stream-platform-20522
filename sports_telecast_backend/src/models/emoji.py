@@ -88,6 +88,7 @@ class UserEmojiReactionCaptureRequest(BaseModel):
     userId: str = Field(..., description="User identifier (string UUID)")
     eventId: str = Field(..., description="Event or match identifier (string UUID)")
     emojiId: str = Field(..., description="Emoji identifier (string UUID)")
+    emojiType: str = Field(..., description="Emoji type string (e.g., 'clap', 'fire'). Must match the emoji's type in emoji_assets")
     createdAt: str = Field(..., description="ISO 8601 timestamp string for when the reaction occurred")
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")

@@ -92,10 +92,13 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """Run migrations using an async engine with a PostgreSQL advisory lock.
+    """
+    Run migrations using an async engine with a PostgreSQL advisory lock.
 
-    This prevents concurrent migration runs (e.g., when uvicorn reload spawns multiple processes)
-    which can otherwise deadlock on DDL like CREATE TYPE/CREATE TABLE.
+    Improvements:
+    - Sets connection-level timeouts to avoid indefinite blocking on DDL locks.
+    - Sets application_name for easier identification in pg_stat_activity.
+    - Bounded retry loop for advisory lock acquisition with logging.
     """
     connectable = create_async_engine(
         get_url(),
@@ -103,44 +106,60 @@ async def run_async_migrations() -> None:
     )
 
     # Advisory lock configuration
-    # Use a stable bigint key; can be overridden via env var
     lock_key = int(os.getenv("ALEMBIC_ADVISORY_LOCK_KEY", "653210987654321"))
-    # Max time in seconds to wait for lock before skipping on this process
-    timeout_seconds = float(os.getenv("ALEMBIC_LOCK_TIMEOUT", "30"))
+
+    # Time to wait for advisory lock acquisition (seconds)
+    lock_wait_seconds = float(os.getenv("ALEMBIC_LOCK_TIMEOUT", "30"))
+
+    # Database-level timeouts (string values acceptable by Postgres, e.g. '15s', '2min')
+    statement_timeout = os.getenv("ALEMBIC_STATEMENT_TIMEOUT", "5min")
+    lock_timeout_db = os.getenv("ALEMBIC_PG_LOCK_TIMEOUT", "15s")
+    idle_tx_timeout = os.getenv("ALEMBIC_IDLE_TX_TIMEOUT", "2min")
+    application_name = os.getenv("ALEMBIC_APPLICATION_NAME", "sports_telecast_alembic")
 
     try:
         async with connectable.connect() as connection:
-            # Attempt to acquire advisory lock with timeout
-            start = asyncio.get_event_loop().time()
+            # Apply connection-level settings to minimize hang risk
+            # Note: Using literals here because some SET commands cannot be parameterized.
+            await connection.execute(text(f"SET application_name TO '{application_name}'"))
+            await connection.execute(text(f"SET lock_timeout TO '{lock_timeout_db}'"))
+            await connection.execute(text(f"SET statement_timeout TO '{statement_timeout}'"))
+            await connection.execute(text(f"SET idle_in_transaction_session_timeout TO '{idle_tx_timeout}'"))
+
+            # Try to acquire advisory lock
+            loop = asyncio.get_event_loop()
+            start = loop.time()
             acquired = False
+            attempt = 0
             while True:
+                attempt += 1
                 result = await connection.execute(
                     text("SELECT pg_try_advisory_lock(:k)"),
                     {"k": lock_key},
                 )
                 if bool(result.scalar()):
                     acquired = True
+                    print(f"[alembic] Acquired advisory lock {lock_key} after {attempt} attempt(s).")
                     break
 
-                if asyncio.get_event_loop().time() - start > timeout_seconds:
-                    # Give up acquiring lock; assume another process is performing migrations
+                if loop.time() - start > lock_wait_seconds:
                     print(
                         f"[alembic] Could not acquire advisory lock {lock_key} within "
-                        f"{timeout_seconds}s; skipping migrations in this process"
+                        f"{lock_wait_seconds}s; skipping migrations in this process"
                     )
                     return
 
                 await asyncio.sleep(0.5)
 
             # Run migrations under the advisory lock
+            print("[alembic] Running migrations (online)...")
             await connection.run_sync(do_run_migrations)
+            print("[alembic] Migrations completed successfully.")
 
-            # Release lock (also released on connection close, but explicit is better)
+            # Release lock explicitly
             if acquired:
-                await connection.execute(
-                    text("SELECT pg_advisory_unlock(:k)"),
-                    {"k": lock_key},
-                )
+                await connection.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": lock_key})
+                print(f"[alembic] Released advisory lock {lock_key}.")
     finally:
         await connectable.dispose()
 

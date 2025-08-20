@@ -1,21 +1,112 @@
+#!/usr/bin/env python3
+"""
+Database maintenance CLI for Sports Telecast Backend.
+
+Provides safe operations to:
+- Inspect database locks
+- Clear Alembic advisory locks (by lock key)
+- Reset alembic_version to a known-good base
+- Run Alembic migrations (upgrade/stamp)
+- Create/drop tables directly from ORM (for dev-only)
+
+Usage:
+  python manage_db.py locks
+  python manage_db.py clear-locks [lock_key]
+  python manage_db.py alembic-reset
+  python manage_db.py alembic-stamp-base
+  python manage_db.py alembic-upgrade [revision]
+  python manage_db.py create
+  python manage_db.py drop
+"""
+import sys
+from typing import Optional
+
 from src.database.connection import engine
 from src.database.models import Base
 
-if __name__ == "__main__":
-    # Uses environment-set DATABASE_URL or POSTGRES_URL for all DB operations.
-    import sys
+# PUBLIC_INTERFACE
+def _print_usage() -> None:
+    """Print available CLI commands."""
+    print(__doc__)
 
-    if len(sys.argv) < 2:
-        print("Usage: python manage_db.py [create|drop]")
+
+# PUBLIC_INTERFACE
+def main(argv: list[str]) -> None:
+    """
+    Entry point for database maintenance commands.
+
+    Commands:
+        locks: Inspect active database locks including advisory locks.
+        clear-locks [lock_key]: Clear/terminate sessions holding the specified advisory lock key
+            (defaults to ALEMBIC_ADVISORY_LOCK_KEY or 653210987654321).
+        alembic-reset: Reset alembic_version table (truncate) so migrations can re-apply cleanly.
+        alembic-stamp-base: Stamp the database at 'base' (no migrations applied) without running scripts.
+        alembic-upgrade [revision]: Run Alembic upgrade to the specified revision (default 'head').
+        create: Create all tables using ORM metadata (dev only).
+        drop: Drop all tables using ORM metadata (dev only).
+    """
+    if len(argv) < 2:
+        _print_usage()
         sys.exit(1)
 
-    command = sys.argv[1]
+    cmd = argv[1].strip().lower()
+    arg: Optional[str] = argv[2] if len(argv) > 2 else None
 
-    if command == "create":
+    if cmd == "create":
         Base.metadata.create_all(bind=engine)
         print("Database tables created.")
-    elif command == "drop":
+        return
+
+    if cmd == "drop":
         Base.metadata.drop_all(bind=engine)
         print("Database tables dropped.")
-    else:
-        print("Unknown command:", command)
+        return
+
+    # Lazy imports for Alembic/maintenance to avoid import cost for simple ops
+    if cmd in {"locks", "clear-locks", "alembic-reset", "alembic-stamp-base", "alembic-upgrade"}:
+        from src.database.maintenance import (
+            inspect_locks,
+            clear_advisory_lock_holders,
+            alembic_reset,
+            alembic_stamp_base,
+            alembic_upgrade,
+        )
+
+        if cmd == "locks":
+            summary = inspect_locks()
+            print("Lock summary:")
+            for k, v in summary.items():
+                print(f"  {k}: {v}")
+            return
+
+        if cmd == "clear-locks":
+            lock_key = arg
+            summary = clear_advisory_lock_holders(lock_key=lock_key)
+            print("Clear advisory lock result:")
+            for k, v in summary.items():
+                print(f"  {k}: {v}")
+            return
+
+        if cmd == "alembic-reset":
+            alembic_reset()
+            print("alembic_version reset (TRUNCATE performed if table exists).")
+            return
+
+        if cmd == "alembic-stamp-base":
+            alembic_stamp_base()
+            print("Alembic stamped at base.")
+            return
+
+        if cmd == "alembic-upgrade":
+            revision = arg or "head"
+            alembic_upgrade(revision)
+            print(f"Alembic upgrade to {revision} complete.")
+            return
+
+    print(f"Unknown command: {cmd}")
+    _print_usage()
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main(sys.argv)

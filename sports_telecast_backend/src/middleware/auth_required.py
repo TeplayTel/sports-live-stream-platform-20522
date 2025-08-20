@@ -16,6 +16,9 @@ class AuthRequiredMiddleware(BaseHTTPMiddleware):
     Exemptions:
       - POST /auth/register
       - POST /auth/login
+      - GET  /openapi.json
+      - GET  /docs (and nested paths)
+      - GET  /redoc (and nested paths)
 
     Special handling:
       - POST /fan-engagement/emoji/v1/upload
@@ -34,7 +37,11 @@ class AuthRequiredMiddleware(BaseHTTPMiddleware):
         self.exempt_paths = {
             "/auth/register",
             "/auth/login",
+            "/openapi.json",  # Allow OpenAPI spec without auth
         }
+        # Prefix-based exemptions to allow FastAPI docs UIs and any nested assets
+        self.exempt_prefixes = ["/docs", "/redoc"]
+
         # Path for upload which may accept ADMIN_UPLOAD_TOKEN
         self.upload_path = "/fan-engagement/emoji/v1/upload"
         # Admin token for upload endpoint compatibility
@@ -51,8 +58,8 @@ class AuthRequiredMiddleware(BaseHTTPMiddleware):
         if request.method.upper() == "OPTIONS":
             return await call_next(request)
 
-        # Exempt specific paths (login/register)
-        if path in self.exempt_paths:
+        # Exempt specific paths (login/register, openapi) and docs prefixes
+        if path in self.exempt_paths or any(path.startswith(prefix) for prefix in getattr(self, "exempt_prefixes", [])):
             return await call_next(request)
 
         # Extract Authorization header

@@ -32,6 +32,7 @@ from ..database import (
 
 # Import middleware
 from ..middleware.api_logger import APILoggingMiddleware, set_api_logger
+from ..middleware.auth_required import AuthRequiredMiddleware
 
 # (get_trusted_user import removed — now only used via dependent modules)
 
@@ -131,6 +132,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Enforce JWT authentication on all HTTP endpoints except /auth/register and /auth/login.
+# The emoji upload endpoint allows ADMIN_UPLOAD_TOKEN for compatibility; otherwise JWT is required.
+app.add_middleware(AuthRequiredMiddleware)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

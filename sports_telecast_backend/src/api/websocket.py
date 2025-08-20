@@ -30,18 +30,24 @@ async def websocket_endpoint(
     - Live match events
     - General event notifications
 
-    Authentication via JWT token is optional but recommended for personalized updates.
+    Authentication via JWT token is required.
     """
     user_id = None
 
-    # Optional authentication
-    if token:
-        try:
-            payload = JWTAuth.verify_token(token)
-            user_id = payload.get("sub")
-        except Exception as e:
-            logger.warning(f"WebSocket authentication failed: {e}")
-            # Continue without authentication
+    # Require authentication
+    if not token:
+        await websocket.close(code=1008, reason="Authentication required")
+        return
+    try:
+        payload = JWTAuth.verify_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=1008, reason="Invalid token")
+            return
+    except Exception as e:
+        logger.warning(f"WebSocket authentication failed: {e}")
+        await websocket.close(code=1008, reason="Invalid token")
+        return
 
     # Validate event exists (try match or event id)
     match_repo = MatchRepository(db)

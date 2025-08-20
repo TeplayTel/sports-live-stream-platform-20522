@@ -8,9 +8,11 @@ This package contains custom middleware for:
 """
 
 from .api_logger import APILoggingMiddleware, get_api_logger, set_api_logger
+from .auth_required import AuthRequiredMiddleware
 
 __all__ = [
     "APILoggingMiddleware",
     "get_api_logger", 
-    "set_api_logger"
+    "set_api_logger",
+    "AuthRequiredMiddleware",
 ]

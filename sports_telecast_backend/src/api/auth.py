@@ -6,8 +6,7 @@ from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
 from sqlalchemy.ext.asyncio import AsyncSession
-from .utils import get_trusted_user
-from ..auth.jwt_auth import JWTAuth, ACCESS_TOKEN_EXPIRE_MINUTES, get_mock_bearer_token
+from ..auth.jwt_auth import JWTAuth, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_user_id
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -132,17 +131,16 @@ async def register_user(
 # PUBLIC_INTERFACE
 @router.get("/me", response_model=UserResponse, summary="Get current user")
 async def get_current_user_profile(
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Get the current trusted/mock user's profile (from headers/params/body).
+    Get the current user's profile derived from the JWT token (Bearer authentication).
 
-    - **returns**: UserResponse profile
+    - returns: UserResponse profile
     """
-    user_id, _ = get_trusted_user(request)
     repo = UserRepository(db)
-    user = await repo.get_user_by_id(user_id)
+    user = await repo.get_user_by_id(current_user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user_response = convert_user_db_to_response(user)
@@ -152,18 +150,17 @@ async def get_current_user_profile(
 @router.put("/me", response_model=UserResponse, summary="Update current user")
 async def update_current_user_profile(
     user_update: UserUpdate = Body(...),
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Update the trusted/mock user's profile.
+    Update the current user's profile using identity from the JWT token.
 
-    - **user_update**: UserUpdate payload
-    - **returns**: UserResponse updated profile
+    - user_update: UserUpdate payload
+    - returns: UserResponse updated profile
     """
-    user_id, _ = get_trusted_user(request)
     repo = UserRepository(db)
-    user = await repo.update_user(user_id, user_update)
+    user = await repo.update_user(current_user_id, user_update)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user_response = convert_user_db_to_response(user)
@@ -172,23 +169,30 @@ async def update_current_user_profile(
 # PUBLIC_INTERFACE
 @router.post("/refresh", response_model=TokenData, summary="Refresh access token")
 async def refresh_access_token(
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Refresh the access token (dummy for mock mode).
+    Refresh the access token using the current authenticated user.
 
-    - **returns**: TokenData (JWT access token + user info)
+    - returns: TokenData (new JWT access token + user info)
     """
-    user_id, _ = get_trusted_user(request)
     repo = UserRepository(db)
-    user = await repo.get_user_by_id(user_id)
+    user = await repo.get_user_by_id(current_user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user_response = convert_user_db_to_response(user)
+    access_token = JWTAuth.create_access_token(
+        data={
+            "sub": str(user.user_id),
+            "email": user.email,
+            "username": user.username,
+            "role": user.role.value,
+        }
+    )
     return TokenData(
-        access_token=get_mock_bearer_token(),
+        access_token=access_token,
         token_type="bearer",
-        expires_in=86400,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=user_response
     )

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Query, Body, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Body, Depends
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,38 +11,43 @@ from ..database.connection import get_db
 from ..database.models import UserProfileDB, UserDB, ProfileVisibilityEnum
 from datetime import datetime
 import uuid
-from .utils import get_trusted_user
+from ..auth.jwt_auth import get_current_user_id
 
 router = APIRouter(prefix="/profiles", tags=["User Profiles"])
 
 # PUBLIC_INTERFACE
 @router.post(
-    "/", 
-    response_model=UserProfileResponse, 
+    "/",
+    response_model=UserProfileResponse,
     summary="Create user profile",
     response_description="The created user profile."
 )
 async def create_user_profile(
     profile_data: UserProfileCreate = Body(...),
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Create a new user profile.
-    Accepts userId from headers, params, or body ("mock login").
-    Returns a UserProfileResponse Pydantic model.
+    Create a new user profile for the current authenticated user.
+
+    The user ID is taken from the Bearer JWT token. If the user_id is not provided
+    in the body, it will be set to the authenticated user's ID.
+
+    Returns:
+        UserProfileResponse: Created profile data
     """
-    user_id, _ = get_trusted_user(request)
-    # If not present in body, inject
+    # Ensure the profile is created for the authenticated user
     pdict = profile_data.dict()
     if not pdict.get("user_id"):
-        pdict["user_id"] = user_id
+        pdict["user_id"] = current_user_id
+
     # Check if profile already exists
     existing_profile = await db.execute(
         select(UserProfileDB).where(UserProfileDB.user_id == pdict["user_id"])
     )
     if existing_profile.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User profile already exists")
+
     profile = UserProfileDB(
         profile_id=str(uuid.uuid4()),
         user_id=pdict["user_id"],
@@ -69,18 +74,19 @@ async def create_user_profile(
     response_description="The current logged-in user's profile."
 )
 async def get_my_profile(
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Get the trusted/mock current user's own profile.
-    Returns a UserProfileResponse Pydantic model.
+    Get the current user's own profile (JWT-authenticated).
+
+    Returns:
+        UserProfileResponse
     """
-    user_id, _ = get_trusted_user(request)
     result = await db.execute(
         select(UserProfileDB)
         .options(selectinload(UserProfileDB.user))
-        .where(UserProfileDB.user_id == user_id)
+        .where(UserProfileDB.user_id == current_user_id)
     )
     profile = result.scalar_one_or_none()
     if not profile:
@@ -96,23 +102,26 @@ async def get_my_profile(
 )
 async def update_my_profile(
     profile_update: UserProfileUpdate = Body(...),
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Update the trusted/mock current user's profile.
-    Returns a UserProfileResponse Pydantic model.
+    Update the current user's profile (JWT-authenticated).
+
+    Returns:
+        UserProfileResponse
     """
-    user_id, _ = get_trusted_user(request)
     result = await db.execute(
-        select(UserProfileDB).where(UserProfileDB.user_id == user_id)
+        select(UserProfileDB).where(UserProfileDB.user_id == current_user_id)
     )
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
     # Update fields if provided
     for attr, value in profile_update.dict(exclude_unset=True).items():
         setattr(profile, attr, value)
+
     profile.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(profile)
@@ -127,15 +136,18 @@ async def update_my_profile(
 )
 async def get_profile_by_id(
     profile_id: str,
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Get a user profile by profile ID.
-    Accepts current user from trusted frontend header if owner check is needed.
-    Returns a UserProfileResponse Pydantic model.
+    Get a user profile by profile ID (JWT required).
+
+    Authorization rules:
+    - PRIVATE profiles are only viewable by the owner.
+
+    Returns:
+        UserProfileResponse
     """
-    user_id, _ = get_trusted_user(request)
     result = await db.execute(
         select(UserProfileDB)
         .options(selectinload(UserProfileDB.user))
@@ -144,10 +156,12 @@ async def get_profile_by_id(
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
     # PRIVATE profiles only viewable by owner
-    if profile.profile_visibility == ProfileVisibilityEnum.PRIVATE and user_id != profile.user_id:
+    if profile.profile_visibility == ProfileVisibilityEnum.PRIVATE and current_user_id != profile.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Profile is private")
-    return _convert_profile_to_response(profile, is_own_profile=(user_id == profile.user_id))
+
+    return _convert_profile_to_response(profile, is_own_profile=(current_user_id == profile.user_id))
 
 # PUBLIC_INTERFACE
 @router.get(
@@ -163,37 +177,40 @@ async def search_profiles(
     verified_only: bool = Query(False, description="Show only verified profiles"),
     limit: int = Query(20, ge=1, le=100, description="Number of profiles to return"),
     offset: int = Query(0, ge=0, description="Number of profiles to skip"),
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Search user profiles. Accepts mock user via trusted input but not required.
-    Returns a list of UserProfileResponse Pydantic models.
+    Search user profiles (JWT required).
+
+    Visibility:
+    - Authenticated users see PUBLIC and FRIENDS profiles.
+
+    Returns:
+        List[UserProfileResponse]
     """
-    user_id, _ = get_trusted_user(request)
     query = select(UserProfileDB).options(selectinload(UserProfileDB.user))
-    # Only show public profiles to non-authenticated users
-    from ..database.models import ProfileVisibilityEnum
-    if not user_id:
-        query = query.where(UserProfileDB.profile_visibility == ProfileVisibilityEnum.PUBLIC)
-    else:
-        query = query.where(UserProfileDB.profile_visibility.in_([ProfileVisibilityEnum.PUBLIC, ProfileVisibilityEnum.FRIENDS]))
+
+    # Authenticated users see PUBLIC and FRIENDS
+    query = query.where(UserProfileDB.profile_visibility.in_([ProfileVisibilityEnum.PUBLIC, ProfileVisibilityEnum.FRIENDS]))
+
     if q:
         query = query.join(UserDB).where(
-            UserDB.username.ilike(f"%{q}%") | 
-            UserProfileDB.display_name.ilike(f"%{q}%")
+            (UserDB.username.ilike(f"%{q}%")) |
+            (UserProfileDB.display_name.ilike(f"%{q}%"))
         )
     if favorite_sport:
         query = query.where(UserProfileDB.favorite_sports.contains([favorite_sport]))
     if location:
         query = query.where(UserProfileDB.location.ilike(f"%{location}%"))
     if verified_only:
-        query = query.where(UserProfileDB.is_verified == True)
+        query = query.where(UserProfileDB.is_verified == True)  # noqa: E712
+
     query = query.offset(offset).limit(limit).order_by(UserProfileDB.created_at.desc())
     result = await db.execute(query)
     profiles = result.scalars().all()
     return [
-        _convert_profile_to_response(profile, is_own_profile=(user_id == profile.user_id))
+        _convert_profile_to_response(profile, is_own_profile=(current_user_id == profile.user_id))
         for profile in profiles
     ]
 
@@ -204,20 +221,22 @@ async def search_profiles(
     response_description="Confirmation of profile deletion."
 )
 async def delete_my_profile(
-    request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Delete the trusted/mock current user's profile.
-    Returns a confirmation message.
+    Delete the current user's profile.
+
+    Returns:
+        dict: Confirmation message
     """
-    user_id, _ = get_trusted_user(request)
     result = await db.execute(
-        select(UserProfileDB).where(UserProfileDB.user_id == user_id)
+        select(UserProfileDB).where(UserProfileDB.user_id == current_user_id)
     )
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
     await db.delete(profile)
     await db.commit()
     return {"message": "Profile deleted successfully"}

@@ -69,6 +69,17 @@ def _run_in_savepoint(connection, func: Callable[[], None], desc: str) -> bool:
     Returns:
         bool: True if succeeded and committed the savepoint; False if rolled back.
     """
+    # If no connection is available (e.g., offline mode), execute without savepoint and log
+    if connection is None:
+        _log(f"WARNING: No connection available for SAVEPOINT '{desc}'. Executing without SAVEPOINT.")
+        try:
+            func()
+            _log(f"Executed without SAVEPOINT successfully for: {desc}")
+            return True
+        except Exception as e:
+            _log(f"ERROR (no SAVEPOINT) during '{desc}': {e}. This may taint the outer transaction if any.")
+            return False
+
     try:
         _log(f"BEGIN SAVEPOINT for: {desc}")
         with connection.begin_nested() as trans:
@@ -166,7 +177,7 @@ def _backfill_image_url_online(connection) -> None:
     # First attempt: Postgres regex-based backfill
     def _regex_backfill():
         _log("Attempting regex-based backfill for image_url where NULL...")
-        connection.execute(
+        res = connection.execute(
             text(
                 """
                 UPDATE emoji_assets
@@ -180,6 +191,10 @@ def _backfill_image_url_online(connection) -> None:
             ),
             {"base": base},
         )
+        try:
+            res.close()
+        except Exception:
+            pass
         _log("Regex-based backfill completed (if applicable).")
 
     if _run_in_savepoint(connection, _regex_backfill, "regex-based backfill image_url"):
@@ -188,7 +203,7 @@ def _backfill_image_url_online(connection) -> None:
     # Fallback attempt: Simple concatenation (cross-dialect)
     def _concat_backfill():
         _log("Attempting simple concatenation backfill for image_url where NULL...")
-        connection.execute(
+        res = connection.execute(
             text(
                 """
                 UPDATE emoji_assets
@@ -198,6 +213,10 @@ def _backfill_image_url_online(connection) -> None:
             ),
             {"base": base},
         )
+        try:
+            res.close()
+        except Exception:
+            pass
         _log("Simple concatenation backfill completed (if applicable).")
 
     _run_in_savepoint(connection, _concat_backfill, "concat-based backfill image_url")
@@ -277,7 +296,11 @@ def upgrade():
 
         # Sanity check to ensure outer transaction is not tainted
         def _sanity_noop():
-            bind.execute(text("SELECT 1"))
+            res = bind.execute(text("SELECT 1"))
+            try:
+                res.close()
+            except Exception:
+                pass
 
         _run_in_savepoint(bind, _sanity_noop, "sanity SELECT 1")
 
@@ -314,13 +337,14 @@ def downgrade():
             offline = False
 
         if offline:
-            def _offline_drop():
+            try:
                 op.execute(
                     "ALTER TABLE IF EXISTS emoji_assets "
                     "DROP COLUMN IF EXISTS image_url"
                 )
-            _run_in_savepoint(op.get_bind() if hasattr(op, "get_bind") else None, _offline_drop, "offline drop image_url") if hasattr(op, "get_bind") else _offline_drop()
-            _log("Offline: emitted DROP COLUMN IF EXISTS for image_url (guarded).")
+                _log("Offline: emitted DROP COLUMN IF EXISTS for image_url (guarded).")
+            except Exception as e:
+                _log(f"Warning: offline DROP COLUMN image_url failed (ignored): {e}")
             _log("Exiting downgrade() early for offline mode.")
             return
 

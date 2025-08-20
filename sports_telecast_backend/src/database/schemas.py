@@ -74,19 +74,41 @@ class ScheduleResponse(BaseResponse):
     matches: List[MatchResponse] = []
 
 # Conversion functions
+# PUBLIC_INTERFACE
 def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
-    """Convert UserDB to response dict"""
+    """Convert a UserDB ORM object to a serializable response dict.
+
+    This function is defensive against:
+    - role being either an Enum or a plain string (handles both)
+    - preferences being None (coerces to an empty dict to satisfy API schema)
+    - created_at/updated_at not yet hydrated from DB defaults (fallbacks provided)
+    """
+    # Normalize role to string value
+    raw_role = getattr(user_db, "role", None)
+    role_value = getattr(raw_role, "value", raw_role) if raw_role is not None else "user"
+    if not isinstance(role_value, str):
+        # As a final fallback, stringify any unexpected type
+        role_value = str(role_value)
+
+    # Ensure preferences is a dict for API response validation
+    preferences_value = user_db.preferences or {}
+
+    # Timestamps: provide safe fallbacks if not set yet
+    from datetime import datetime as _dt  # local import to avoid polluting module namespace
+    created_at_value = user_db.created_at or _dt.utcnow()
+    updated_at_value = user_db.updated_at or created_at_value
+
     return {
         "user_id": str(user_db.user_id),
         "email": user_db.email,
         "username": user_db.username,
         "full_name": user_db.full_name,
         "avatar_url": user_db.avatar_url,
-        "role": user_db.role.value,
-        "preferences": user_db.preferences,
+        "role": role_value,
+        "preferences": preferences_value,
         "is_active": user_db.is_active,
-        "created_at": user_db.created_at,
-        "updated_at": user_db.updated_at
+        "created_at": created_at_value,
+        "updated_at": updated_at_value,
     }
 
 def convert_team_db_to_response(team_db: TeamDB) -> TeamResponse:

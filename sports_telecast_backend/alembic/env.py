@@ -2,6 +2,7 @@ import asyncio
 import os
 from logging.config import fileConfig
 from sqlalchemy import pool, text
+
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
@@ -82,14 +83,72 @@ def run_migrations_offline() -> None:
     )
 
     with context.begin_transaction():
+        # Offline mode: no database connection available; pre-hook not applicable.
         context.run_migrations()
 
+
+def _ensure_alembic_version_length_sync(conn: Connection) -> None:
+    """
+    Ensure alembic_version.version_num column is at least VARCHAR(64).
+    This must occur BEFORE Alembic writes/reads long revision IDs.
+
+    Implementation detail:
+    - Reads current type info using information_schema for Postgres.
+    - If length is exactly 32 (legacy), issues an ALTER TABLE to VARCHAR(64).
+    - If table/column doesn't exist (first migration), it's a no-op.
+    - If already >= 64 or unlimited (text), it's a no-op.
+    - Runs with IF EXISTS like behavior via try/except for portability.
+    """
+    try:
+        # Check existence and current length (PostgreSQL specific query)
+        result = conn.execute(
+            text(
+                """
+                SELECT character_maximum_length
+                FROM information_schema.columns
+                WHERE table_name = 'alembic_version'
+                  AND column_name = 'version_num'
+                """
+            )
+        )
+        row = result.first()
+        if not row:
+            print("[alembic] version table not present yet; skipping version_num length check.")
+            return
+
+        current_len = row[0]  # None for TEXT (unlimited), or integer for varchar
+        # None => TEXT or similar unlimited; treat as OK
+        if current_len is None:
+            print("[alembic] alembic_version.version_num is unlimited (TEXT); no change needed.")
+            return
+
+        if current_len >= 64:
+            print(f"[alembic] alembic_version.version_num length {current_len} >= 64; no change needed.")
+            return
+
+        if current_len == 32:
+            print("[alembic] Expanding alembic_version.version_num from VARCHAR(32) to VARCHAR(64) ...")
+            # Autocommit DDL is fine; we are before migration transaction config
+            conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
+            print("[alembic] Successfully expanded alembic_version.version_num to VARCHAR(64).")
+        else:
+            # Unexpected small length; still attempt to expand
+            print(f"[alembic] Detected alembic_version.version_num length={current_len}; attempting expand to 64.")
+            conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
+            print("[alembic] Expanded alembic_version.version_num to VARCHAR(64).")
+    except Exception as ex:
+        # If anything fails (e.g., different DB, DDL already applied), log and continue.
+        # We don't want to block migrations if this check can't run.
+        print(f"[alembic] Pre-hook version_num expand check encountered non-fatal issue: {ex}")
 
 def do_run_migrations(connection: Connection) -> None:
     """
     Run Alembic migrations within a context-managed transaction.
     Adds extra debugging around begin/commit to surface hidden exceptions.
     """
+    # IMPORTANT: ensure column size before configuring Alembic context
+    _ensure_alembic_version_length_sync(connection)
+
     context.configure(connection=connection, target_metadata=target_metadata)
 
     print("[alembic] BEGIN migration transaction")
@@ -176,6 +235,8 @@ async def run_async_migrations() -> None:
             # Run migrations under the advisory lock
             print("[alembic] Running migrations (online)...")
             try:
+                # Ensure version_num is large enough BEFORE Alembic writes any revision IDs
+                await connection.run_sync(_ensure_alembic_version_length_sync)
                 await connection.run_sync(do_run_migrations)
             except Exception as e:
                 # Ensure full stack trace is printed here

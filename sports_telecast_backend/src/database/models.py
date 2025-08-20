@@ -163,7 +163,10 @@ class EmojiAssetDB(Base):
         SQLEnum(EmojiTypeEnum, name="emojitypeenum", native_enum=True, create_type=False),
         nullable=False
     )
-    image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    # Note: image_url is introduced by Alembic revision 005 as a nullable column with best-effort backfill.
+    # Keep this column nullable at the ORM level to avoid transaction commit failures when legacy rows exist
+    # without a resolvable file_location. A later migration can enforce NOT NULL after data cleanup.
+    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

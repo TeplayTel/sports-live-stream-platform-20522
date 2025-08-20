@@ -495,6 +495,22 @@ def upgrade():
         # Best-effort backfill
         _backfill_image_url_online(bind)
 
+        # Post-backfill diagnostics: count remaining NULL image_url rows for visibility
+        try:
+            if _column_exists(bind, "emoji_assets", "image_url"):
+                res = bind.execute(
+                    text("SELECT COUNT(*) AS c FROM emoji_assets WHERE image_url IS NULL")
+                )
+                row = res.fetchone()
+                try:
+                    res.close()
+                except Exception:
+                    pass
+                remaining_nulls = row.c if row and hasattr(row, "c") else (row[0] if row else None)
+                _log(f"Diagnostics: emoji_assets.image_url NULL count after backfill = {remaining_nulls}")
+        except Exception as diag_exc:
+            _log(f"Diagnostics warning: could not count NULL image_url rows: {diag_exc}")
+
         # Sanity check to ensure outer transaction is not tainted
         def _sanity_noop():
             res = bind.execute(text("SELECT 1"))

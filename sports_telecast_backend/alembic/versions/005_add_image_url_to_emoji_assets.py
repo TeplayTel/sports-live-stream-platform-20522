@@ -246,6 +246,96 @@ def _log_tx_state(connection, note: Optional[str] = None) -> None:
         _log(f"Could not log transaction state: {e}")
 
 
+def _final_commit_probe_or_raise(connection) -> None:
+    """
+    As a final step, probe for commit-time errors that would only surface when Alembic
+    updates the version table and commits the outer transaction.
+
+    Strategy:
+    - Log transaction id/isolation (PostgreSQL) to correlate with DB logs.
+    - Force any deferred constraints to evaluate via 'SET CONSTRAINTS ALL IMMEDIATE'.
+      If violations exist, this will raise here and provide a clear error in logs,
+      rather than failing silently at commit.
+    - Verify alembic_version table is readable (sanity).
+
+    Any exceptions raised here are intentionally propagated to escalate the error,
+    ensuring the CI/console shows the true cause of a ROLLBACK.
+    """
+    if connection is None:
+        _log("FINAL-PROBE: No connection available; skipping commit probe.")
+        return
+
+    dialect = getattr(getattr(connection, "dialect", None), "name", "unknown")
+    _log(f"FINAL-PROBE: starting (dialect={dialect})")
+    _log_tx_state(connection, note="final-probe-begin")
+
+    # PostgreSQL-specific diagnostics/probes
+    if dialect == "postgresql":
+        # Try to log the current transaction id (useful to correlate with server logs)
+        try:
+            res = connection.execute(text("SELECT txid_current() AS txid"))
+            row = res.fetchone()
+            try:
+                res.close()
+            except Exception:
+                pass
+            _log(f"FINAL-PROBE: txid_current={row.txid if row else 'unknown'}")
+        except Exception as e:
+            _log(f"FINAL-PROBE: warning: could not fetch txid_current(): {e}")
+
+        # Try to log isolation level if available
+        try:
+            res = connection.execute(text("SELECT current_setting('transaction_isolation', true) AS iso"))
+            row = res.fetchone()
+            try:
+                res.close()
+            except Exception:
+                pass
+            _log(f"FINAL-PROBE: isolation={row.iso if row else 'unknown'}")
+        except Exception as e:
+            _log(f"FINAL-PROBE: warning: could not fetch transaction isolation: {e}")
+
+        # Force all deferred constraints to be checked immediately.
+        # If there is any pending violation that would only appear on COMMIT,
+        # this raises right now with a clear message.
+        _log("FINAL-PROBE: forcing deferred constraints to IMMEDIATE for early detection...")
+        try:
+            connection.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            _log("FINAL-PROBE: SET CONSTRAINTS ALL IMMEDIATE succeeded (no deferred violations).")
+        except Exception as e:
+            _log(f"FINAL-PROBE ERROR: Deferred constraint violation or commit-time error detected: {e}")
+            _log("FINAL-PROBE: escalating by re-raising so Alembic shows the true cause.")
+            raise
+
+    # Sanity check: alembic_version table should be accessible
+    try:
+        res = connection.execute(text("SELECT version_num FROM alembic_version"))
+        try:
+            res.close()
+        except Exception:
+            pass
+        _log("FINAL-PROBE: alembic_version accessible.")
+    except Exception as e:
+        _log(f"FINAL-PROBE ERROR: Unable to read alembic_version table: {e}")
+        _log("FINAL-PROBE: escalating by re-raising so Alembic shows the true cause.")
+        raise
+
+    # Final small no-op to ensure connection still healthy
+    try:
+        res = connection.execute(text("SELECT 1"))
+        try:
+            res.close()
+        except Exception:
+            pass
+    except Exception as e:
+        _log(f"FINAL-PROBE ERROR: Health check SELECT failed: {e}")
+        _log("FINAL-PROBE: escalating by re-raising so Alembic shows the true cause.")
+        raise
+
+    _log_tx_state(connection, note="final-probe-end")
+    _log("FINAL-PROBE: completed successfully; ready for Alembic version-table update and COMMIT.")
+
+
 # PUBLIC_INTERFACE
 def upgrade():
     """Upgrade migration entrypoint.
@@ -306,9 +396,17 @@ def upgrade():
 
         _log_tx_state(bind, note="post-ops")
 
-        _log("Upgrade operations completed without unhandled exceptions.")
+        # Final probe to surface any commit-time or deferred errors before Alembic updates
+        # the version table. Any error is re-raised to expose the true cause in logs.
+        try:
+            _final_commit_probe_or_raise(bind)
+        except Exception as probe_exc:
+            _log(f"FINAL-PROBE escalation in upgrade(): {probe_exc}")
+            raise
+
+        _log("Upgrade operations completed without unhandled exceptions, final probe passed.")
         _log("Alembic will now update the version table and commit the migration transaction.")
-        _log("If a ROLLBACK still occurs after this point, inspect the TX_STATE logs above for clues.")
+        _log("If a ROLLBACK still occurs after this point, compare the txid/isolation logs above with DB logs.")
     except Exception as fatal:
         # Absolute last-resort catch to avoid aborting Alembic flow; we still log for diagnosis
         _log(f"FATAL: Unexpected exception escaped upgrade(): {fatal}. Migration will likely ROLLBACK.")
@@ -373,7 +471,16 @@ def downgrade():
             _run_in_savepoint(bind, _op_drop, "op.drop_column(image_url)")
 
         _log_tx_state(bind, note="post-downgrade")
-        _log("Downgrade completed (non-destructive).")
+
+        # Final probe to surface any commit-time or deferred errors before Alembic updates
+        # the version table. Any error is re-raised to expose the true cause in logs.
+        try:
+            _final_commit_probe_or_raise(bind)
+        except Exception as probe_exc:
+            _log(f"FINAL-PROBE escalation in downgrade(): {probe_exc}")
+            raise
+
+        _log("Downgrade completed (non-destructive), final probe passed.")
         _log("Alembic will now update the version table and commit the migration transaction.")
     except Exception as fatal:
         _log(f"FATAL: Unexpected exception escaped downgrade(): {fatal}. Migration may ROLLBACK.")

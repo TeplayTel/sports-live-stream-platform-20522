@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, Query, Request, Body, Depends
+from fastapi import APIRouter, HTTPException, status, Request, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 import asyncio
+from pydantic import BaseModel, Field
+from typing import List
 
 from ..models.emoji import (
-    EmojiListResponse,
     EmojiReactionSummary,
     UserEmojiReactionCaptureRequest,
     ReactionCapturedResponse,
@@ -39,31 +40,58 @@ def _parse_created_at(created_at_str: str) -> datetime:
 
 
 # PUBLIC_INTERFACE
-@router.get("/listEmojis", response_model=EmojiListResponse, summary="List available emojis")
+class EmojiListItem(BaseModel):
+    """Response model item for listing emojis with frontend-required fields."""
+    emojiId: str = Field(..., description="Emoji unique identifier (from emoji_id)")
+    emojiType: str = Field(..., description="Emoji type/category (from emoji_type)")
+    imageUrl: str = Field(..., description="Public image URL for the emoji (from image_url or derived)")
+
+# PUBLIC_INTERFACE
+@router.get(
+    "/listEmojis",
+    response_model=List[EmojiListItem],
+    summary="List available emojis",
+    description="Return all records from emoji_assets with fields: emojiId (emoji_id), emojiType (emoji_type), imageUrl (image_url or derived from file_location).",
+    responses={
+        200: {"description": "List of available emojis"},
+        500: {"description": "Internal server error"}
+    },
+)
 async def list_emojis(
-    pageNo: int = Query(1, ge=1, description="Page number"),
-    pageSize: int = Query(10, ge=1, le=100, description="Page size"),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get paginated list of available emojis for reactions.
-    Accepts userId/userData via headers or request for trusted/mocked login.
+    List all available emojis for reactions.
+
+    Returns a flat list of items with camelCase keys expected by the frontend:
+    - emojiId: from emoji_assets.emoji_id
+    - emojiType: from emoji_assets.emoji_type
+    - imageUrl: from emoji_assets.image_url if available, otherwise derived from file_location
+
+    Notes:
+    - Connects to the actual database via AsyncSession using the repository layer.
+    - No pagination; returns all active emojis, ordered by sort_order when available.
     """
-    get_trusted_user(request)
-    offset = (pageNo - 1) * pageSize
+    # No auth needed; allow trusted frontend access
+    _ = get_trusted_user(request)
+
     emoji_repo = EmojiRepository(db)
-    emojis_db = await emoji_repo.get_emojis(limit=pageSize, offset=offset)
-    emojis = [convert_emoji_db_to_pydantic(emoji) for emoji in emojis_db]
-    all_emojis_db = await emoji_repo.get_emojis(limit=1000, offset=0)
-    total_count = len(all_emojis_db)
-    return EmojiListResponse(
-        status="SUCCESS",
-        emojis=emojis,
-        total=total_count,
-        page=pageNo,
-        page_size=pageSize,
-    )
+    # Fetch all active emojis (upper reasonable bound)
+    emojis_db = await emoji_repo.get_emojis(limit=1000, offset=0)
+
+    # Convert using shared converter (handles ORM and minimal dict rows) then remap keys to camelCase
+    items: List[EmojiListItem] = []
+    for e in emojis_db:
+        converted = convert_emoji_db_to_pydantic(e)
+        items.append(
+            EmojiListItem(
+                emojiId=str(converted.get("emoji_id")),
+                emojiType=str(converted.get("emoji_type")),
+                imageUrl=str(converted.get("image_url")),
+            )
+        )
+    return items
 
 
 # PUBLIC_INTERFACE

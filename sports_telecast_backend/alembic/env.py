@@ -86,10 +86,25 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    """
+    Run Alembic migrations within a context-managed transaction.
+    Adds extra debugging around begin/commit to surface hidden exceptions.
+    """
     context.configure(connection=connection, target_metadata=target_metadata)
 
-    with context.begin_transaction():
-        context.run_migrations()
+    print("[alembic] BEGIN migration transaction")
+    try:
+        with context.begin_transaction():
+            context.run_migrations()
+        print("[alembic] END migration transaction (run_migrations completed)")
+    except Exception as e:
+        # Print full exception to ensure visibility in CI logs
+        import traceback as _tb
+        print("[alembic] EXCEPTION during run_migrations:")
+        for line in "".join(_tb.format_exception(type(e), e, e.__traceback__)).splitlines():
+            print("[alembic]   " + line)
+        # Re-raise so Alembic handles rollback as usual
+        raise
 
 
 async def run_async_migrations() -> None:
@@ -101,6 +116,7 @@ async def run_async_migrations() -> None:
     - Sets application_name for easier identification in pg_stat_activity.
     - Bounded retry loop for advisory lock acquisition with logging.
     - Supports SQL echo logging when ALEMBIC_SQL_ECHO or LOG_SQL=true is set.
+    - Adds robust try/except logging around run_migrations to surface hidden errors.
     """
     # Allow verbose SQL logging for diagnosis when requested
     sql_echo_env = os.getenv("ALEMBIC_SQL_ECHO") or os.getenv("LOG_SQL") or ""
@@ -159,8 +175,32 @@ async def run_async_migrations() -> None:
 
             # Run migrations under the advisory lock
             print("[alembic] Running migrations (online)...")
-            await connection.run_sync(do_run_migrations)
-            print("[alembic] Migrations completed successfully.")
+            try:
+                await connection.run_sync(do_run_migrations)
+            except Exception as e:
+                # Ensure full stack trace is printed here
+                import traceback as _tb
+                print("[alembic] EXCEPTION bubbled from do_run_migrations:")
+                for line in "".join(_tb.format_exception(type(e), e, e.__traceback__)).splitlines():
+                    print("[alembic]   " + line)
+                raise
+            else:
+                print("[alembic] Migrations completed successfully.")
+
+            # Lightweight transaction integrity probe to catch doomed transaction state early
+            try:
+                # A harmless read to ensure connection still OK
+                await connection.execute(text("SELECT 1"))
+                # Force deferred constraints one more time right after migrations
+                await connection.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+                print("[alembic] Post-run integrity probe passed (constraints immediate).")
+            except Exception as probe_exc:
+                print(f"[alembic] Post-run integrity probe FAILED: {probe_exc}")
+                import traceback as _tb
+                for line in "".join(_tb.format_exception(type(probe_exc), probe_exc, probe_exc.__traceback__)).splitlines():
+                    print("[alembic]   " + line)
+                # Re-raise to force visibility before Alembic attempts version-table update
+                raise
 
             # Release lock explicitly
             if acquired:

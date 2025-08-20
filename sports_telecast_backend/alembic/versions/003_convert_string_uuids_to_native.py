@@ -1,4 +1,4 @@
-"""Convert String UUIDs to native PostgreSQL UUIDs with FK-safe mapping and validation
+"""Convert String UUIDs to native PostgreSQL UUIDs with Python-side UUID generation and FK-safe mapping
 
 Revision ID: 003
 Revises: 002
@@ -6,14 +6,17 @@ Create Date: 2024-08-07 13:00:00.000000
 
 This migration:
 - Validates and normalizes all string UUID columns to valid UUID strings first (fixing NULL/invalid data).
+- All new UUIDs are generated in Python using uuid.uuid4(); no server-side generation is used.
 - Propagates changes to child tables using a temporary mapping approach to maintain referential integrity.
-- Drops foreign keys that would block type changes, alters column types in place to UUID using USING casts,
+- Drops foreign keys prior to updating IDs to avoid FK violations, alters column types to UUID using USING casts,
   and re-creates equivalent foreign keys.
 - Logs actions and counts at each step to aid debugging and rollback safety.
 
 It avoids half-applied changes by running in a single transaction; any error will rollback the whole migration.
 """
 from alembic import op
+from typing import List, Optional, Set, Tuple
+import uuid
 
 # revision identifiers, used by Alembic.
 revision = "003"
@@ -22,6 +25,7 @@ branch_labels = None
 depends_on = None
 
 
+# Regex used in Postgres to test for valid canonical UUID strings (lowercase hex is tolerated by ~*).
 UUID_REGEX = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
 
@@ -29,58 +33,10 @@ def _log(msg: str) -> None:
     print(f"[003_uuid_migration] {msg}")
 
 
-def _choose_uuid_generator(bind) -> str:
-    """
-    Pick an available server-side UUID generator function string.
-    Preference: gen_random_uuid() from pgcrypto; fallback to uuid_generate_v4() from uuid-ossp.
-    """
-    try:
-        has_gen = bind.exec_driver_sql(
-            "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'gen_random_uuid')"
-        ).scalar()
-    except Exception:
-        has_gen = False
-    try:
-        has_ossp = bind.exec_driver_sql(
-            "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'uuid_generate_v4')"
-        ).scalar()
-    except Exception:
-        has_ossp = False
-
-    if has_gen:
-        return "gen_random_uuid()"
-    if has_ossp:
-        return "uuid_generate_v4()"
-    # Try creating extensions, then re-check
-    try:
-        bind.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS pgcrypto")
-        has_gen = bind.exec_driver_sql(
-            "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'gen_random_uuid')"
-        ).scalar()
-    except Exception:
-        has_gen = False
-    if has_gen:
-        return "gen_random_uuid()"
-    try:
-        bind.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
-        has_ossp = bind.exec_driver_sql(
-            "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'uuid_generate_v4')"
-        ).scalar()
-    except Exception:
-        has_ossp = False
-    if has_ossp:
-        return "uuid_generate_v4()"
-
-    # Last-resort SQL expression to synthesize a UUID (not cryptographically strong)
-    # Uses MD5 of current_timestamp and random() sources to build a UUID v4-like value.
-    return "(concat_ws('-', substr(md5(random()::text),1,8), substr(md5(clock_timestamp()::text),1,4), '4'||substr(md5(random()::text),1,3), substr('89ab', (random()*3)::int+1, 1)||substr(md5(random()::text),1,3), substr(md5(clock_timestamp()::text||random()::text),1,12)))::uuid"
-
-
-def _drop_fk_for_column(bind, table_name: str, column_name: str) -> list[tuple[str, str]]:
+def _drop_fk_for_column(bind, table_name: str, column_name: str) -> List[Tuple[str, str]]:
     """
     Drop all FK constraints on a given table for a given column (as the FK-holding side).
-    Returns a list of (constraint_name, ddl) where ddl holds minimal info to recreate later is not provided;
-    constraint recreation is performed explicitly elsewhere with known relationships.
+    Returns a list of (constraint_name, table_name). Constraint recreation is handled explicitly later.
     """
     _log(f"Dropping FK(s) on {table_name}.{column_name} if any.")
     rows = bind.exec_driver_sql(
@@ -96,7 +52,7 @@ def _drop_fk_for_column(bind, table_name: str, column_name: str) -> list[tuple[s
         """,
         (table_name, column_name),
     ).mappings().all()
-    dropped = []
+    dropped: List[Tuple[str, str]] = []
     for r in rows:
         cname = r["constraint_name"]
         _log(f"  - Dropping constraint {cname} on {table_name}")
@@ -107,21 +63,73 @@ def _drop_fk_for_column(bind, table_name: str, column_name: str) -> list[tuple[s
     return dropped
 
 
-def _ensure_valid_uuid_strings_with_mapping(
+def _get_invalid_ids(bind, table: str, col: str) -> List[Optional[str]]:
+    """
+    Return list of DISTINCT invalid (or NULL) values from table.col.
+    """
+    res = bind.exec_driver_sql(
+        f"""
+        SELECT DISTINCT {col} AS old_id
+        FROM {table}
+        WHERE {col} IS NULL
+           OR NOT ({col} ~* %s)
+        """,
+        (UUID_REGEX,),
+    )
+    rows = res.mappings().all()
+    return [row["old_id"] for row in rows]
+
+
+def _get_existing_valid_ids(bind, table: str, col: str) -> Set[str]:
+    """
+    Return set of existing valid UUID string values in table.col.
+    """
+    res = bind.exec_driver_sql(
+        f"""
+        SELECT DISTINCT {col} AS id
+        FROM {table}
+        WHERE {col} IS NOT NULL
+          AND ({col} ~* %s)
+        """,
+        (UUID_REGEX,),
+    )
+    return {row["id"] for row in res.mappings().all()}
+
+
+def _generate_python_mapping(
+    invalid_ids: List[Optional[str]], existing_ids: Set[str]
+) -> List[Tuple[Optional[str], str]]:
+    """
+    Generate a mapping list of (old_id, new_id_string) for the provided invalid_ids.
+    Ensures new IDs do not collide with existing_ids or previously generated IDs.
+    """
+    mapping: List[Tuple[Optional[str], str]] = []
+    used: Set[str] = set(existing_ids)  # guard against collisions
+    for old in invalid_ids:
+        new_val = str(uuid.uuid4())
+        while new_val in used:
+            new_val = str(uuid.uuid4())
+        used.add(new_val)
+        mapping.append((old, new_val))
+    return mapping
+
+
+def _apply_mapping_via_temp_table(
     bind,
+    mapping: List[Tuple[Optional[str], str]],
     parent_table: str,
     parent_col: str,
-    child_refs: list[tuple[str, str]],
-    uuid_gen_sql: str,
+    child_refs: List[Tuple[str, str]],
 ) -> None:
     """
-    Ensure parent_table.parent_col contains only valid UUID strings.
-    - Creates a temp mapping of invalid/NULL old -> new uuid strings.
-    - Updates parent table using mapping.
-    - Propagates mapping to child_refs (list of (child_table, child_col)).
-    - Removes orphan child rows that reference non-existent parents after update.
+    Create a temporary mapping table and apply updates to parent and child tables.
+    Optionally remove orphan/invalid child rows after propagation.
+
+    mapping is a list of (old_id, new_id) where old_id can be None.
     """
-    _log(f"Validating and normalizing {parent_table}.{parent_col} as UUID strings")
+    _log(
+        f"Applying mapping for {parent_table}.{parent_col} using temp table; rows={len(mapping)}"
+    )
     # Create temp mapping table (auto-dropped at commit)
     bind.exec_driver_sql(
         f"""
@@ -131,28 +139,16 @@ def _ensure_valid_uuid_strings_with_mapping(
         ) ON COMMIT DROP
         """
     )
-    # Populate mapping for invalid/NULL IDs
-    ins = bind.exec_driver_sql(
-        f"""
-        WITH invalid_rows AS (
-            SELECT {parent_col} AS old_id
-            FROM {parent_table}
-            WHERE {parent_col} IS NULL
-               OR NOT ({parent_col} ~* %s)
+
+    # Insert mapping rows (row-by-row to avoid driver differences)
+    for old_id, new_id in mapping:
+        bind.exec_driver_sql(
+            f"""
+            INSERT INTO tmp_map_{parent_table}_{parent_col} (old_id, new_id)
+            VALUES (%s, %s)
+            """,
+            (old_id, new_id),
         )
-        INSERT INTO tmp_map_{parent_table}_{parent_col} (old_id, new_id)
-        SELECT old_id,
-               CASE
-                 WHEN old_id IS NULL THEN ({uuid_gen_sql})::text
-                 ELSE ({uuid_gen_sql})::text
-               END AS new_id
-        FROM invalid_rows
-        """,
-        (UUID_REGEX,),
-    )
-    _log(
-        f"  - Inserted {ins.rowcount if hasattr(ins, 'rowcount') else 'N/A'} mapping rows for {parent_table}.{parent_col}"
-    )
 
     # Update parent table using mapping
     up_p = bind.exec_driver_sql(
@@ -167,7 +163,7 @@ def _ensure_valid_uuid_strings_with_mapping(
         f"  - Parent updates applied: {up_p.rowcount if hasattr(up_p,'rowcount') else 'N/A'}"
     )
 
-    # Propagate to children
+    # Propagate to child tables
     for child_table, child_col in child_refs:
         _log(f"  - Propagating mapping to child {child_table}.{child_col}")
         up_c = bind.exec_driver_sql(
@@ -182,7 +178,7 @@ def _ensure_valid_uuid_strings_with_mapping(
             f"    -> Child updates applied: {up_c.rowcount if hasattr(up_c,'rowcount') else 'N/A'}"
         )
 
-        # Remove orphan child rows (no matching parent) and invalid UUID formats in child col
+        # Remove orphan child rows and invalid UUID formats in child col (defensive cleanup)
         orphans = bind.exec_driver_sql(
             f"""
             WITH candidates AS (
@@ -205,115 +201,80 @@ def _ensure_valid_uuid_strings_with_mapping(
             f"    -> Deleted orphan/invalid child rows from {child_table}: {orphans.rowcount if hasattr(orphans,'rowcount') else 'N/A'}"
         )
 
-    # Finally ensure parent has only valid UUID strings (defensive)
-    fix_p = bind.exec_driver_sql(
-        f"""
-        UPDATE {parent_table}
-        SET {parent_col} = ({uuid_gen_sql})::text
-        WHERE {parent_col} IS NULL OR NOT ({parent_col} ~* %s)
-        """,
-        (UUID_REGEX,),
-    )
-    _log(
-        f"  - Defensive parent fixes (post-propagation): {fix_p.rowcount if hasattr(fix_p,'rowcount') else 'N/A'}"
-    )
+
+def _ensure_valid_uuid_strings_with_mapping_python(
+    bind,
+    parent_table: str,
+    parent_col: str,
+    child_refs: List[Tuple[str, str]],
+) -> None:
+    """
+    Ensure parent_table.parent_col contains only valid UUID strings.
+    Uses Python to generate new UUIDs for NULL/invalid values and propagates the mapping to children.
+    """
+    _log(f"Validating and normalizing {parent_table}.{parent_col} as UUID strings (Python-side UUIDs)")
+    invalids = _get_invalid_ids(bind, parent_table, parent_col)
+    if not invalids:
+        _log(f"  - No invalid/NULL IDs found in {parent_table}.{parent_col}")
+        return
+
+    existing_valid = _get_existing_valid_ids(bind, parent_table, parent_col)
+    mapping = _generate_python_mapping(invalids, existing_valid)
+    _apply_mapping_via_temp_table(bind, mapping, parent_table, parent_col, child_refs)
+
+    # Defensive: verify no remaining invalids; if any, generate again
+    remaining = _get_invalid_ids(bind, parent_table, parent_col)
+    if remaining:
+        _log(f"  - Defensive pass: fixing {len(remaining)} remaining invalid IDs in {parent_table}.{parent_col}")
+        existing_valid = _get_existing_valid_ids(bind, parent_table, parent_col)
+        mapping2 = _generate_python_mapping(remaining, existing_valid)
+        _apply_mapping_via_temp_table(bind, mapping2, parent_table, parent_col, child_refs)
 
 
-def _ensure_valid_uuid_strings_simple(bind, table: str, col: str, uuid_gen_sql: str) -> None:
+def _ensure_valid_uuid_strings_simple_python(bind, table: str, col: str) -> None:
     """
     Ensure a non-FK string UUID column (no children relying on it) contains valid UUID strings.
+    Generates new UUIDs in Python and updates rows individually via a temp mapping for efficiency.
     """
-    _log(f"Validating simple column {table}.{col} as UUID strings")
-    fix = bind.exec_driver_sql(
-        f"""
-        UPDATE {table}
-        SET {col} = ({uuid_gen_sql})::text
-        WHERE {col} IS NULL OR NOT ({col} ~* %s)
-        """,
-        (UUID_REGEX,),
-    )
-    _log(
-        f"  - Normalized {fix.rowcount if hasattr(fix,'rowcount') else 'N/A'} rows in {table}.{col}"
-    )
+    _log(f"Validating simple column {table}.{col} as UUID strings (Python-side UUIDs)")
+    invalids = _get_invalid_ids(bind, table, col)
+    if not invalids:
+        _log(f"  - No invalid/NULL IDs found in {table}.{col}")
+        return
+
+    existing_valid = _get_existing_valid_ids(bind, table, col)
+    mapping = _generate_python_mapping(invalids, existing_valid)
+    _apply_mapping_via_temp_table(bind, mapping, table, col, child_refs=[])
+
+    # Defensive second pass
+    remaining = _get_invalid_ids(bind, table, col)
+    if remaining:
+        _log(f"  - Defensive pass: fixing {len(remaining)} remaining invalid IDs in {table}.{col}")
+        existing_valid = _get_existing_valid_ids(bind, table, col)
+        mapping2 = _generate_python_mapping(remaining, existing_valid)
+        _apply_mapping_via_temp_table(bind, mapping2, table, col, child_refs=[])
 
 
 def _alter_column_to_uuid(bind, table: str, col: str) -> None:
-    _log(f"Altering column type to UUID for {table}.{col}")
+    _log(f'Altering column type to UUID for {table}.{col}')
     bind.exec_driver_sql(
         f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE uuid USING "{col}"::uuid'
     )
 
 
 def upgrade() -> None:
+    """
+    Upgrade: Convert string(36) UUID-like columns to native UUID using Python-side generation for any missing/invalid IDs.
+    Steps:
+      1) Drop foreign keys that might block updates and type changes.
+      2) Normalize/propagate IDs using Python-generated UUIDs.
+      3) Alter all relevant columns to UUID type.
+      4) Re-create foreign keys with deterministic names.
+    """
     bind = op.get_bind()
-    _log("BEGIN upgrade -> 003: Convert String UUIDs to native UUIDs with FK-safe process")
+    _log("BEGIN upgrade -> 003: Convert String UUIDs to native UUIDs using Python-side uuid4()")
 
-    uuid_gen_sql = _choose_uuid_generator(bind)
-    _log(f"Using UUID generator expression: {uuid_gen_sql}")
-
-    # 1) Normalize parent tables and cascade mapping to children
-    # users -> children
-    _ensure_valid_uuid_strings_with_mapping(
-        bind,
-        parent_table="users",
-        parent_col="user_id",
-        child_refs=[("user_profiles", "user_id"), ("user_emoji_reactions", "user_id")],
-        uuid_gen_sql=uuid_gen_sql,
-    )
-
-    # teams -> children (matches home/away, match_events.team_id used as reference but no FK)
-    _ensure_valid_uuid_strings_with_mapping(
-        bind,
-        parent_table="teams",
-        parent_col="team_id",
-        child_refs=[("matches", "home_team_id"), ("matches", "away_team_id"), ("match_events", "team_id")],
-        uuid_gen_sql=uuid_gen_sql,
-    )
-
-    # events -> children (matches.event_id and user_emoji_reactions.event_id as loose ref)
-    _ensure_valid_uuid_strings_with_mapping(
-        bind,
-        parent_table="events",
-        parent_col="event_id",
-        child_refs=[("matches", "event_id"), ("user_emoji_reactions", "event_id")],
-        uuid_gen_sql=uuid_gen_sql,
-    )
-
-    # matches -> children (highlights, match_events, schedule_matches)
-    _ensure_valid_uuid_strings_with_mapping(
-        bind,
-        parent_table="matches",
-        parent_col="match_id",
-        child_refs=[("highlights", "match_id"), ("match_events", "match_id"), ("schedule_matches", "match_id")],
-        uuid_gen_sql=uuid_gen_sql,
-    )
-
-    # emoji_assets -> children (user_emoji_reactions.emoji_id)
-    _ensure_valid_uuid_strings_with_mapping(
-        bind,
-        parent_table="emoji_assets",
-        parent_col="emoji_id",
-        child_refs=[("user_emoji_reactions", "emoji_id")],
-        uuid_gen_sql=uuid_gen_sql,
-    )
-
-    # schedules -> children (schedule_matches)
-    _ensure_valid_uuid_strings_with_mapping(
-        bind,
-        parent_table="schedules",
-        parent_col="schedule_id",
-        child_refs=[("schedule_matches", "schedule_id")],
-        uuid_gen_sql=uuid_gen_sql,
-    )
-
-    # Standalone primary keys not referenced by others
-    _ensure_valid_uuid_strings_simple(bind, "user_profiles", "profile_id", uuid_gen_sql)
-    _ensure_valid_uuid_strings_simple(bind, "user_emoji_reactions", "reaction_id", uuid_gen_sql)
-    _ensure_valid_uuid_strings_simple(bind, "highlights", "highlight_id", uuid_gen_sql)
-    _ensure_valid_uuid_strings_simple(bind, "match_events", "event_id", uuid_gen_sql)
-
-    # 2) Drop foreign key constraints that would block type change (child side)
-    # Explicitly drop known FK constraints by column on each child table
+    # 1) Drop foreign key constraints on child tables prior to any updates to prevent FK violations
     fk_targets = [
         ("user_profiles", "user_id"),
         ("user_emoji_reactions", "user_id"),
@@ -329,8 +290,56 @@ def upgrade() -> None:
     for tbl, col in fk_targets:
         _drop_fk_for_column(bind, tbl, col)
 
+    # 2) Normalize parent tables and cascade mapping to children (Python-generated UUIDs)
+    _ensure_valid_uuid_strings_with_mapping_python(
+        bind,
+        parent_table="users",
+        parent_col="user_id",
+        child_refs=[("user_profiles", "user_id"), ("user_emoji_reactions", "user_id")],
+    )
+
+    _ensure_valid_uuid_strings_with_mapping_python(
+        bind,
+        parent_table="teams",
+        parent_col="team_id",
+        child_refs=[("matches", "home_team_id"), ("matches", "away_team_id"), ("match_events", "team_id")],
+    )
+
+    _ensure_valid_uuid_strings_with_mapping_python(
+        bind,
+        parent_table="events",
+        parent_col="event_id",
+        child_refs=[("matches", "event_id"), ("user_emoji_reactions", "event_id")],
+    )
+
+    _ensure_valid_uuid_strings_with_mapping_python(
+        bind,
+        parent_table="matches",
+        parent_col="match_id",
+        child_refs=[("highlights", "match_id"), ("match_events", "match_id"), ("schedule_matches", "match_id")],
+    )
+
+    _ensure_valid_uuid_strings_with_mapping_python(
+        bind,
+        parent_table="emoji_assets",
+        parent_col="emoji_id",
+        child_refs=[("user_emoji_reactions", "emoji_id")],
+    )
+
+    _ensure_valid_uuid_strings_with_mapping_python(
+        bind,
+        parent_table="schedules",
+        parent_col="schedule_id",
+        child_refs=[("schedule_matches", "schedule_id")],
+    )
+
+    # Standalone primary keys not referenced by others
+    _ensure_valid_uuid_strings_simple_python(bind, "user_profiles", "profile_id")
+    _ensure_valid_uuid_strings_simple_python(bind, "user_emoji_reactions", "reaction_id")
+    _ensure_valid_uuid_strings_simple_python(bind, "highlights", "highlight_id")
+    _ensure_valid_uuid_strings_simple_python(bind, "match_events", "event_id")
+
     # 3) Alter column types in place using USING casts
-    # Parents and their FKs
     to_convert = [
         # users related
         ("users", "user_id"),

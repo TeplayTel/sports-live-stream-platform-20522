@@ -17,6 +17,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Set
+import threading
+import time
+import uuid
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -247,6 +250,152 @@ def _inspect_initial_schema(conn) -> Dict[str, Any]:
 
 
 # PUBLIC_INTERFACE
+# PUBLIC_INTERFACE
+def run_diagnose_001_migration(timeout_seconds: int = 180, engine: Engine = sync_engine) -> Dict[str, Any]:
+    """
+    Run 'alembic upgrade 001' while continuously monitoring pg_stat_activity and pg_locks.
+    This identifies which DDL statement starts and which one does not return, and whether
+    it is blocked by another session/transaction or previous schema state.
+
+    Returns:
+        Dict summary including:
+            - application_name: Name used for Alembic connection so monitoring can filter
+            - started: bool
+            - completed: bool
+            - duration_seconds: float
+            - last_seen_query: str (trimmed)
+            - lock_samples: list of brief snapshots collected periodically
+            - error: str if any exception occurred
+            - note: additional info
+    """
+    app_name = f"sports_telecast_alembic_diag_{uuid.uuid4().hex[:8]}"
+    # Set env vars to improve observability and avoid infinite waits
+    os.environ["ALEMBIC_APPLICATION_NAME"] = app_name
+    os.environ.setdefault("ALEMBIC_PG_LOCK_TIMEOUT", "15s")
+    os.environ.setdefault("ALEMBIC_STATEMENT_TIMEOUT", "5min")
+    os.environ.setdefault("ALEMBIC_IDLE_TX_TIMEOUT", "2min")
+    os.environ.setdefault("ALEMBIC_SQL_ECHO", "true")
+
+    cfg = _alembic_config()
+
+    stop_evt = threading.Event()
+    samples: List[Dict[str, Any]] = []
+
+    def _monitor():
+        with engine.connect() as conn:
+            while not stop_evt.is_set():
+                try:
+                    # Collect current Alembic queries for this app
+                    rows = conn.execute(
+                        text(
+                            """
+                            SELECT now() AS ts, pid, state, wait_event_type, wait_event, query
+                            FROM pg_stat_activity
+                            WHERE application_name = :app
+                            ORDER BY pid
+                            """
+                        ),
+                        {"app": app_name},
+                    ).mappings().all()
+
+                    # Count waiters (not granted locks)
+                    waiters = conn.execute(
+                        text(
+                            """
+                            SELECT count(*) AS waiting
+                            FROM pg_locks w
+                            WHERE NOT w.granted
+                            """
+                        )
+                    ).scalar()
+
+                    # Count advisory locks
+                    advisories = conn.execute(
+                        text(
+                            """
+                            SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'
+                            """
+                        )
+                    ).scalar()
+
+                    sample = {
+                        "ts": time.time(),
+                        "alembic_sessions": [
+                            {
+                                "pid": r["pid"],
+                                "state": r["state"],
+                                "wait_event_type": r["wait_event_type"],
+                                "wait_event": r["wait_event"],
+                                "query": (" ".join((r.get("query") or "").split()))[:300],
+                            }
+                            for r in rows
+                        ],
+                        "waiting_locks": int(waiters or 0),
+                        "advisory_locks": int(advisories or 0),
+                    }
+                    samples.append(sample)
+                    # Print a concise line for real-time visibility
+                    print(
+                        f"[diagnose-001] sessions={len(sample['alembic_sessions'])} "
+                        f"waiting_locks={sample['waiting_locks']} advisory={sample['advisory_locks']} "
+                        f"last_query=\"{(sample['alembic_sessions'][0]['query'] if sample['alembic_sessions'] else '')}\""
+                    )
+                except Exception as e:
+                    print(f"[diagnose-001] monitor error (ignored): {e}")
+                # Polling interval
+                stop_evt.wait(timeout=1.0)
+
+    t = threading.Thread(target=_monitor, daemon=True)
+    t.start()
+
+    started = False
+    completed = False
+    error: Optional[str] = None
+    start_time = time.time()
+    last_query = ""
+
+    try:
+        started = True
+        # Run only up to 001 to pinpoint the first problematic DDL
+        command.upgrade(cfg, "001")
+        completed = True
+    except Exception as e:
+        error = str(e)
+    finally:
+        duration = time.time() - start_time
+        stop_evt.set()
+        t.join(timeout=5)
+
+        # Determine last seen query if available
+        if samples and samples[-1]["alembic_sessions"]:
+            last_query = samples[-1]["alembic_sessions"][0]["query"]
+
+    # Provide a human hint based on last_query and waits
+    note = ""
+    if not completed and samples:
+        # If waiting_locks is consistently > 0, likely blocked by another transaction
+        waiting_counts = [s["waiting_locks"] for s in samples[-10:]]
+        if any(c > 0 for c in waiting_counts):
+            note = "The DDL appears blocked by existing locks. Check pg_stat_activity for blockers."
+        elif "CREATE TYPE" in last_query.upper():
+            note = "Hanging during enum type creation; ensure no concurrent transactions referencing or altering this type."
+        elif "CREATE TABLE" in last_query.upper():
+            note = "Hanging during table creation; verify no conflicting table or lock on pg_class/relations."
+        else:
+            note = "Hanging during an unclassified step; see monitor logs above for more details."
+
+    return {
+        "application_name": app_name,
+        "started": started,
+        "completed": completed,
+        "duration_seconds": round(duration, 3),
+        "last_seen_query": last_query,
+        "lock_samples": samples[:50],  # limit to keep output reasonable
+        "error": error,
+        "note": note,
+    }
+
+
 def diagnose_initial_state(engine: Engine = sync_engine) -> Dict[str, Any]:
     """
     Diagnose current DB state related to advisory locks and initial migration (001).

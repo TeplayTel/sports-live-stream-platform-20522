@@ -17,6 +17,7 @@ Usage:
   python manage_db.py alembic-stamp-base
   python manage_db.py alembic-upgrade [revision]
   python manage_db.py diagnose-initial
+  python manage_db.py diagnose-001
   python manage_db.py repair-initial [lock_key]
   python manage_db.py create
   python manage_db.py drop
@@ -78,6 +79,7 @@ def main(argv: list[str]) -> None:
             alembic_upgrade,
             diagnose_initial_state,
             repair_initial_migration,
+            run_diagnose_001_migration,
         )
 
         if cmd == "locks":
@@ -116,6 +118,20 @@ def main(argv: list[str]) -> None:
             print("Diagnosis complete. Summary:")
             for k, v in result.items():
                 print(f"- {k}: {v}")
+            return
+
+        if cmd == "diagnose-001":
+            result = run_diagnose_001_migration()
+            print("Diagnose 001 summary:")
+            for k, v in result.items():
+                if k == "lock_samples":
+                    print(f"- {k}: {len(v)} snapshots collected (showing latest 3)")
+                    for snap in v[-3:]:
+                        print(f"  ts={snap['ts']} sessions={len(snap['alembic_sessions'])} waiting={snap['waiting_locks']} advisory={snap['advisory_locks']}")
+                        for s in snap["alembic_sessions"]:
+                            print(f"    pid={s['pid']} state={s['state']} wait={s['wait_event_type']}/{s['wait_event']} query=\"{s['query']}\"")
+                else:
+                    print(f"- {k}: {v}")
             return
 
         if cmd == "repair-initial":

@@ -100,10 +100,15 @@ async def run_async_migrations() -> None:
     - Sets connection-level timeouts to avoid indefinite blocking on DDL locks.
     - Sets application_name for easier identification in pg_stat_activity.
     - Bounded retry loop for advisory lock acquisition with logging.
+    - Supports SQL echo logging when ALEMBIC_SQL_ECHO or LOG_SQL=true is set.
     """
+    # Allow verbose SQL logging for diagnosis when requested
+    sql_echo_env = os.getenv("ALEMBIC_SQL_ECHO") or os.getenv("LOG_SQL") or ""
+    sql_echo = str(sql_echo_env).strip().lower() in {"1", "true", "yes", "on"}
     connectable = create_async_engine(
         get_url(),
         poolclass=pool.NullPool,
+        echo=sql_echo,
     )
 
     # Advisory lock configuration

@@ -32,17 +32,63 @@ target_metadata = Base.metadata
 # Global flag to indicate if we applied an in-memory revision truncation patch
 _REV_TRUNC_PATCH_ACTIVE = False
 
+def _ensure_alembic_version_length_sync(conn: Connection) -> None:
+    """
+    Ensure alembic_version.version_num column is at least VARCHAR(64).
+    This must occur BEFORE Alembic writes/reads long revision IDs.
+
+    Implementation detail:
+    - Reads current type info using information_schema for Postgres.
+    - If length is exactly 32 (legacy), issues an ALTER TABLE to VARCHAR(64).
+    - If table/column doesn't exist (first migration), it's a no-op.
+    - If already >= 64 or unlimited (text), it's a no-op.
+    - Runs with IF EXISTS like behavior via try/except for portability.
+    """
+    try:
+        # Check existence and current length (PostgreSQL specific query)
+        result = conn.execute(
+            text(
+                """
+                SELECT character_maximum_length
+                FROM information_schema.columns
+                WHERE table_name = 'alembic_version'
+                  AND column_name = 'version_num'
+                """
+            )
+        )
+        row = result.first()
+        if not row:
+            # version table not yet present; nothing to do
+            return
+
+        current_len = row[0]  # None for TEXT (unlimited), or integer for varchar
+        # None => TEXT or similar unlimited; treat as OK
+        if current_len is None or current_len >= 64:
+            return
+
+        # Attempt to widen safely; if it's already widened by another process, ignore errors
+        try:
+            conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
+            print("[alembic] Ensured alembic_version.version_num is VARCHAR(64).")
+        except Exception as ddl_ex:
+            # Ignore concurrent upgrades or non-Postgres dialect differences
+            print(f"[alembic] Non-fatal: could not ALTER alembic_version.version_num -> VARCHAR(64): {ddl_ex}")
+    except Exception as ex:
+        # Non-fatal; continue normal flow
+        print(f"[alembic] WARN: version_num length detection failed (non-fatal): {ex}")
+
 def _maybe_patch_revision_truncation(conn: Connection) -> None:
     """
-    Detect if alembic_version.version_num is VARCHAR(32); if so, apply a temporary
-    in-memory patch so Alembic only uses the first 32 chars of revision ids when
-    reading/writing during this process. This allows migrations to proceed until
-    the widening migration runs.
+    Detect if alembic_version.version_num is still narrow (<64); if so, apply a temporary
+    in-memory patch so Alembic only uses the first N chars of revision ids when
+    reading/writing during this process. This allows migrations to proceed safely.
 
     This does NOT alter the database schema; it only changes behavior in-memory.
     A clear warning is printed so operators know this is a temporary compatibility hack.
     """
     global _REV_TRUNC_PATCH_ACTIVE
+    if _REV_TRUNC_PATCH_ACTIVE:
+        return
     try:
         result = conn.execute(
             text(
@@ -64,145 +110,71 @@ def _maybe_patch_revision_truncation(conn: Connection) -> None:
         if current_len is None or current_len >= 64:
             return
 
-        if current_len == 32:
-            # Apply temporary monkey-patch for this process only.
-            try:
-                from alembic.script.revision import Revision
-            except Exception as import_ex:
-                print(f"[alembic] WARN: Could not import Alembic internals for truncation patch: {import_ex}")
-                return
+        max_len = int(current_len or 32)
+        try:
+            from alembic.script.revision import Revision
+            from alembic.runtime.environment import EnvironmentContext
+            from alembic.runtime.migration import MigrationContext as _MC
+        except Exception as import_ex:
+            print(f"[alembic] WARN: Could not import Alembic internals for truncation patch: {import_ex}")
+            return
 
-            # Patch Revision.revision to return a truncated value when accessed/used.
-            if not hasattr(Revision, "_orig_revision_property"):
-                # Keep reference to original property/attribute resolution pattern
-                _orig_getattr = Revision.__getattribute__
+        if not hasattr(Revision, "_orig_revision_property"):
+            _orig_getattr = Revision.__getattribute__
 
-                def _patched_getattribute(self, name):  # noqa: ANN001
-                    # Intercept common attributes used for version tracking
-                    if name in ("revision", "down_revision", "down_revisions"):
-                        try:
-                            val = _orig_getattr(self, name)
-                            if val is None:
-                                return val
-                            if isinstance(val, str):
-                                return val[:32]
-                            if isinstance(val, (list, tuple)):
-                                return type(val)(v[:32] if isinstance(v, str) else v for v in val)
+            def _patched_getattribute(self, name):  # noqa: ANN001
+                if name in ("revision", "down_revision", "down_revisions"):
+                    try:
+                        val = _orig_getattr(self, name)
+                        if val is None:
                             return val
-                        except Exception:
-                            return _orig_getattr(self, name)
-                    return _orig_getattr(self, name)
+                        if isinstance(val, str):
+                            return val[:max_len]
+                        if isinstance(val, (list, tuple)):
+                            return type(val)(v[:max_len] if isinstance(v, str) else v for v in val)
+                        return val
+                    except Exception:
+                        return _orig_getattr(self, name)
+                return _orig_getattr(self, name)
 
-                # Store the original to allow potential future restoration (not strictly needed in this process)
-                Revision._orig_revision_property = _orig_getattr  # type: ignore[attr-defined]
-                Revision.__getattribute__ = _patched_getattribute  # type: ignore[assignment]
+            Revision._orig_revision_property = _orig_getattr  # type: ignore[attr-defined]
+            Revision.__getattribute__ = _patched_getattribute  # type: ignore[assignment]
 
-            # Patch context version table writes by wrapping stamp/put operations
-            try:
-                from alembic.runtime.environment import EnvironmentContext
-                orig_stamp = EnvironmentContext.stamp
+        try:
+            orig_stamp = EnvironmentContext.stamp
 
-                def _patched_stamp(self, *args, **kwargs):  # noqa: ANN001
-                    if args and isinstance(args[0], str):
-                        args = (args[0][:32],) + args[1:]
-                    if "revision" in kwargs and isinstance(kwargs["revision"], str):
-                        kwargs["revision"] = kwargs["revision"][:32]
-                    return orig_stamp(self, *args, **kwargs)
+            def _patched_stamp(self, *args, **kwargs):  # noqa: ANN001
+                if args and isinstance(args[0], str):
+                    args = (args[0][:max_len],) + args[1:]
+                if "revision" in kwargs and isinstance(kwargs["revision"], str):
+                    kwargs["revision"] = kwargs["revision"][:max_len]
+                return orig_stamp(self, *args, **kwargs)
 
-                EnvironmentContext.stamp = _patched_stamp  # type: ignore[assignment]
-            except Exception as e:
-                print(f"[alembic] WARN: Could not patch EnvironmentContext.stamp: {e}")
+            EnvironmentContext.stamp = _patched_stamp  # type: ignore[assignment]
+        except Exception as e:
+            print(f"[alembic] WARN: Could not patch EnvironmentContext.stamp: {e}")
 
-            # Also ensure context.configure(version_table_pk=False) scenarios handle truncation on set_current_revision
-            try:
-                from alembic.runtime.migration import MigrationContext as _MC
-                orig_set_current = _MC._set_current_revision
+        try:
+            orig_set_current = _MC._set_current_revision
 
-                def _patched_set_current_revision(self, old, new):  # noqa: ANN001
-                    if isinstance(old, str):
-                        old = old[:32]
-                    if isinstance(new, str):
-                        new = new[:32]
-                    return orig_set_current(self, old, new)
+            def _patched_set_current_revision(self, old, new):  # noqa: ANN001
+                if isinstance(old, str):
+                    old = old[:max_len]
+                if isinstance(new, str):
+                    new = new[:max_len]
+                return orig_set_current(self, old, new)
 
-                _MC._set_current_revision = _patched_set_current  # type: ignore[assignment]
-            except Exception as e:
-                print("[alembic] WARN: Could not patch Alembic MigrationContext current revision update: {}".format(e))
+            # Assign the patched function to the MigrationContext
+            _MC._set_current_revision = _patched_set_current_revision  # type: ignore[assignment]
+        except Exception as e:
+            print("[alembic] WARN: Could not patch Alembic MigrationContext current revision update: {}".format(e))
 
-            print(
-                "[alembic] WARNING: Detected alembic_version.version_num as VARCHAR(32). "
-                "Applying temporary in-memory truncation of revision IDs to 32 chars so migrations can proceed. "
-                "Please ensure the widening migration (e.g., 007_expand_alembic_version_length) runs to expand to 64."
-            )
-            _REV_TRUNC_PATCH_ACTIVE = True
-        else:
-            # Length is smaller than expected but not 32; print a warning and attempt to proceed with truncation to that length
-            try:
-                from alembic.script.revision import Revision
-                from alembic.runtime.environment import EnvironmentContext
-            except Exception as import_ex:
-                print(f"[alembic] WARN: Could not import Alembic internals for truncation patch: {import_ex}")
-                return
-
-            max_len = int(current_len or 32)
-
-            if not hasattr(Revision, "_orig_revision_property"):
-                _orig_getattr = Revision.__getattribute__
-
-                def _patched_getattribute(self, name):  # noqa: ANN001
-                    if name in ("revision", "down_revision", "down_revisions"):
-                        try:
-                            val = _orig_getattr(self, name)
-                            if val is None:
-                                return val
-                            if isinstance(val, str):
-                                return val[:max_len]
-                            if isinstance(val, (list, tuple)):
-                                return type(val)(v[:max_len] if isinstance(v, str) else v for v in val)
-                            return val
-                        except Exception:
-                            return _orig_getattr(self, name)
-                    return _orig_getattr(self, name)
-
-                Revision._orig_revision_property = _orig_getattr  # type: ignore[attr-defined]
-                Revision.__getattribute__ = _patched_getattribute  # type: ignore[assignment]
-
-            try:
-                orig_stamp = EnvironmentContext.stamp
-
-                def _patched_stamp(self, *args, **kwargs):  # noqa: ANN001
-                    if args and isinstance(args[0], str):
-                        args = (args[0][:max_len],) + args[1:]
-                    if "revision" in kwargs and isinstance(kwargs["revision"], str):
-                        kwargs["revision"] = kwargs["revision"][:max_len]
-                    return orig_stamp(self, *args, **kwargs)
-
-                EnvironmentContext.stamp = _patched_stamp  # type: ignore[assignment]
-            except Exception as e:
-                print(f"[alembic] WARN: Could not patch EnvironmentContext.stamp: {e}")
-
-            try:
-                from alembic.runtime.migration import MigrationContext as _MC
-                orig_set_current = _MC._set_current_revision
-
-                def _patched_set_current_revision(self, old, new):  # noqa: ANN001
-                    if isinstance(old, str):
-                        old = old[:max_len]
-                    if isinstance(new, str):
-                        new = new[:max_len]
-                    return orig_set_current(self, old, new)
-
-                _MC._set_current_revision = _patched_set_current  # type: ignore[assignment]
-            except Exception as e:
-                print("[alembic] WARN: Could not patch Alembic MigrationContext for current revision update: {}".format(e))
-
-            print(
-                "[alembic] WARNING: Detected alembic_version.version_num as VARCHAR({}). "
-                "Applying temporary in-memory truncation of revision IDs to {} chars so migrations can proceed. "
-                "Please ensure a widening migration expands this column."
-                .format(current_len, max_len)
-            )
-            _REV_TRUNC_PATCH_ACTIVE = True
+        print(
+            f"[alembic] WARNING: Detected alembic_version.version_num as VARCHAR({current_len}). "
+            f"Applying temporary in-memory truncation of revision IDs to {max_len} chars so migrations can proceed. "
+            "Please ensure the widening migration expands this column to 64."
+        )
+        _REV_TRUNC_PATCH_ACTIVE = True
     except Exception as ex:
         # Non-fatal; continue normal flow
         print(f"[alembic] WARN: version_num length detection failed (non-fatal): {ex}")
@@ -264,71 +236,15 @@ def run_migrations_offline() -> None:
         # Offline mode: no database connection available; pre-hook not applicable.
         context.run_migrations()
 
-
-def _ensure_alembic_version_length_sync(conn: Connection) -> None:
-    """
-    Ensure alembic_version.version_num column is at least VARCHAR(64).
-    This must occur BEFORE Alembic writes/reads long revision IDs.
-
-    Implementation detail:
-    - Reads current type info using information_schema for Postgres.
-    - If length is exactly 32 (legacy), issues an ALTER TABLE to VARCHAR(64).
-    - If table/column doesn't exist (first migration), it's a no-op.
-    - If already >= 64 or unlimited (text), it's a no-op.
-    - Runs with IF EXISTS like behavior via try/except for portability.
-    """
-    try:
-        # Check existence and current length (PostgreSQL specific query)
-        result = conn.execute(
-            text(
-                """
-                SELECT character_maximum_length
-                FROM information_schema.columns
-                WHERE table_name = 'alembic_version'
-                  AND column_name = 'version_num'
-                """
-            )
-        )
-        row = result.first()
-        if not row:
-            print("[alembic] version table not present yet; skipping version_num length check.")
-            return
-
-        current_len = row[0]  # None for TEXT (unlimited), or integer for varchar
-        # None => TEXT or similar unlimited; treat as OK
-        if current_len is None:
-            print("[alembic] alembic_version.version_num is unlimited (TEXT); no change needed.")
-            return
-
-        if current_len >= 64:
-            print(f"[alembic] alembic_version.version_num length {current_len} >= 64; no change needed.")
-            return
-
-        if current_len == 32:
-            print("[alembic] Expanding alembic_version.version_num from VARCHAR(32) to VARCHAR(64) ...")
-            # Autocommit DDL is fine; we are before migration transaction config
-            conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
-            print("[alembic] Successfully expanded alembic_version.version_num to VARCHAR(64).")
-        else:
-            # Unexpected small length; still attempt to expand
-            print(f"[alembic] Detected alembic_version.version_num length={current_len}; attempting expand to 64.")
-            conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
-            print("[alembic] Expanded alembic_version.version_num to VARCHAR(64).")
-    except Exception as ex:
-        # If anything fails (e.g., different DB, DDL already applied), log and continue.
-        # We don't want to block migrations if this check can't run.
-        print(f"[alembic] Pre-hook version_num expand check encountered non-fatal issue: {ex}")
-
 def do_run_migrations(connection: Connection) -> None:
     """
     Run Alembic migrations within a context-managed transaction.
     Adds extra debugging around begin/commit to surface hidden exceptions.
     """
-    # IMPORTANT: Apply temporary in-memory patch if version_num is narrow,
+    # IMPORTANT: Ensure widening FIRST, then apply temporary patch if needed
     # BEFORE Alembic reads/writes any revision IDs.
-    _maybe_patch_revision_truncation(connection)
-    # Also attempt to expand to the desired width when possible.
     _ensure_alembic_version_length_sync(connection)
+    _maybe_patch_revision_truncation(connection)
 
     context.configure(connection=connection, target_metadata=target_metadata)
 
@@ -416,9 +332,9 @@ async def run_async_migrations() -> None:
             # Run migrations under the advisory lock
             print("[alembic] Running migrations (online)...")
             try:
-                # Apply temporary in-memory truncation if needed, then ensure widening where possible
-                await connection.run_sync(_maybe_patch_revision_truncation)
+                # Ensure widening first; then patch if still narrow
                 await connection.run_sync(_ensure_alembic_version_length_sync)
+                await connection.run_sync(_maybe_patch_revision_truncation)
                 await connection.run_sync(do_run_migrations)
             except Exception as e:
                 # Ensure full stack trace is printed here

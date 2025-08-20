@@ -34,25 +34,25 @@ class UserRepository(BaseRepository):
     async def create_user(self, user_data: UserCreate, password_hash: str) -> UserDB:
         """
         Create a new user in the database
-        
+
         Args:
             user_data: User creation data
             password_hash: Hashed password
-            
+
         Returns:
             UserDB: Created user record
         """
+        # Let SQLAlchemy/DB handle UUID default rather than passing a string
         user = UserDB(
-            user_id=str(uuid.uuid4()),
             email=user_data.email,
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
             role=UserRoleEnum.USER,
             is_active=True,
-            preferences={}
+            preferences={},
         )
-        
+
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)

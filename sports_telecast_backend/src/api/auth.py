@@ -7,7 +7,7 @@ from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
 from sqlalchemy.ext.asyncio import AsyncSession
 from .utils import get_trusted_user
-from ..auth.jwt_auth import get_mock_bearer_token
+from ..auth.jwt_auth import JWTAuth, ACCESS_TOKEN_EXPIRE_MINUTES, get_mock_bearer_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -32,11 +32,20 @@ async def login_user(
     if not user or not pwd_context.verify(login_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     user_response = convert_user_db_to_response(user)
+    # Create a real JWT access token
+    access_token = JWTAuth.create_access_token(
+        data={
+            "sub": str(user.user_id),
+            "email": user.email,
+            "username": user.username,
+            "role": user.role.value,
+        }
+    )
     return TokenData(
-        access_token=get_mock_bearer_token(),
+        access_token=access_token,
         token_type="bearer",
-        expires_in=86400,
-        user=user_response
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user=user_response,
     )
 
 # PUBLIC_INTERFACE
@@ -104,10 +113,19 @@ async def register_user(
 
     # Build response token and user payload
     user_response = convert_user_db_to_response(created_user)
+    # Create a real JWT access token for the newly registered user
+    access_token = JWTAuth.create_access_token(
+        data={
+            "sub": str(created_user.user_id),
+            "email": created_user.email,
+            "username": created_user.username,
+            "role": created_user.role.value,
+        }
+    )
     return TokenData(
-        access_token=get_mock_bearer_token(),
+        access_token=access_token,
         token_type="bearer",
-        expires_in=86400,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=user_response,
     )
 

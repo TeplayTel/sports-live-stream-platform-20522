@@ -212,18 +212,34 @@ def upgrade() -> None:
     # Create emoji_assets table
     _diag("Creating table: emoji_assets")
     _lock_snapshot(bind, "before emoji_assets")
-    op.create_table('emoji_assets',
-        sa.Column('emoji_id', sa.String(length=36), nullable=False),
-        sa.Column('emoji_type', postgresql.ENUM('clap', 'fire', 'heart', 'thumbs_up', 'celebration', 'shocked', 'angry', 'sad', 'laugh', 'goal', name='emojitypeenum', create_type=False), nullable=False),
-        sa.Column('image_url', sa.Text(), nullable=False),
-        sa.Column('name', sa.String(length=100), nullable=False),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False),
-        sa.Column('sort_order', sa.Integer(), nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.PrimaryKeyConstraint('emoji_id')
-    )
-    _diag("Created table: emoji_assets")
+
+    # Only create table if it does not already exist (idempotent for environments where legacy code created it)
+    def _table_exists_local(table_name: str) -> bool:
+        try:
+            insp = sa.inspect(bind)
+            return table_name in insp.get_table_names()
+        except Exception:
+            return False
+
+    if not _table_exists_local("emoji_assets"):
+        op.create_table(
+            'emoji_assets',
+            sa.Column('emoji_id', sa.String(length=36), nullable=False),
+            sa.Column('emoji_type', postgresql.ENUM(
+                'clap', 'fire', 'heart', 'thumbs_up', 'celebration', 'shocked', 'angry', 'sad', 'laugh', 'goal',
+                name='emojitypeenum', create_type=False
+            ), nullable=False),
+            sa.Column('image_url', sa.Text(), nullable=False),
+            sa.Column('name', sa.String(length=100), nullable=False),
+            sa.Column('description', sa.Text(), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False),
+            sa.Column('sort_order', sa.Integer(), nullable=False),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+            sa.PrimaryKeyConstraint('emoji_id')
+        )
+        _diag("Created table: emoji_assets")
+    else:
+        _diag("Table 'emoji_assets' already exists; skipping create.")
 
     # Create matches table
     _diag("Creating table: matches")

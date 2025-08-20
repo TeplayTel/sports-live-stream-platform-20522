@@ -2,8 +2,8 @@ import os
 import uuid
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Header, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, String, DateTime, text
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, String, DateTime, text
+from sqlalchemy.orm import declarative_base
 from datetime import datetime
 from typing import Optional, Union, List
 from dotenv import load_dotenv
@@ -22,10 +22,8 @@ def get_cdn_base_url():
     """Returns the base CDN URL for constructing emoji image URLs."""
     return os.getenv("EMOJI_CDN_BASE_URL", "https://cdn.placeholderdomain.com/emojis/")
 
-# Database setup (reuse FastAPI settings if available)
-DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./test.db") # fallback for local setup/demo
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Database setup (reuse FastAPI settings via shared connection/session)
+from src.database.connection import SessionLocal
 Base = declarative_base()
 
 class EmojiAsset(Base):
@@ -35,8 +33,7 @@ class EmojiAsset(Base):
     file_location = Column(String(256), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-# Create the table if it does not exist
-Base.metadata.create_all(bind=engine)
+# Note: We do NOT auto-create tables here. Schema is managed exclusively by Alembic migrations.
 
 # Response schemas
 class EmojiAssetResponseModel(BaseModel):

@@ -249,7 +249,7 @@ def upgrade() -> None:
         sa.Column('event_id', sa.String(length=36), nullable=False),
         sa.Column('home_team_id', sa.String(length=36), nullable=False),
         sa.Column('away_team_id', sa.String(length=36), nullable=False),
-        sa.Column('sport_type', postgresql.ENUM('football', 'basketball', 'tennis', 'cricket', 'rugby', 'hockey', 'baseball', name='sporttypeenum'), nullable=False),
+        sa.Column('sport_type', postgresql.ENUM('football', 'basketball', 'tennis', 'cricket', 'rugby', 'hockey', 'baseball', name='sporttypeenum', create_type=False), nullable=False),
         sa.Column('status', postgresql.ENUM('scheduled', 'live', 'finished', 'cancelled', 'postponed', name='matchstatusenum', create_type=False), nullable=False),
         sa.Column('home_score', sa.Integer(), nullable=False),
         sa.Column('away_score', sa.Integer(), nullable=False),

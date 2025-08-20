@@ -17,8 +17,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create ProfileVisibilityEnum
-    op.execute("CREATE TYPE profilevisibilityenum AS ENUM ('public', 'friends', 'private')")
+    # Create ProfileVisibilityEnum (idempotent)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'profilevisibilityenum') THEN
+            CREATE TYPE profilevisibilityenum AS ENUM ('public', 'friends', 'private');
+        END IF;
+    END$$;
+    """)
     
     # Create user_profiles table
     op.create_table('user_profiles',
@@ -35,7 +42,7 @@ def upgrade() -> None:
     sa.Column('favorite_players', sa.JSON(), nullable=True),
     sa.Column('favorite_leagues', sa.JSON(), nullable=True),
     sa.Column('notification_preferences', sa.JSON(), nullable=True),
-    sa.Column('profile_visibility', postgresql.ENUM('public', 'friends', 'private', name='profilevisibilityenum'), nullable=False),
+    sa.Column('profile_visibility', postgresql.ENUM('public', 'friends', 'private', name='profilevisibilityenum', create_type=False), nullable=False),
     sa.Column('show_favorite_teams', sa.Boolean(), nullable=False),
     sa.Column('show_activity', sa.Boolean(), nullable=False),
     sa.Column('allow_friend_requests', sa.Boolean(), nullable=False),
@@ -88,4 +95,4 @@ def downgrade() -> None:
     op.drop_table('user_profiles')
     
     # Drop enum type
-    op.execute("DROP TYPE profilevisibilityenum")
+    op.execute("DROP TYPE IF EXISTS profilevisibilityenum")

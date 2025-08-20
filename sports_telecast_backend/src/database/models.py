@@ -53,7 +53,10 @@ class UserDB(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    role: Mapped[UserRoleEnum] = mapped_column(SQLEnum(UserRoleEnum), default=UserRoleEnum.USER)
+    role: Mapped[UserRoleEnum] = mapped_column(
+        SQLEnum(UserRoleEnum, name="userroleenum", native_enum=True, create_type=False),
+        default=UserRoleEnum.USER
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     preferences: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -84,7 +87,10 @@ class EventDB(Base):
     event_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    sport_type: Mapped[SportTypeEnum] = mapped_column(SQLEnum(SportTypeEnum), nullable=False)
+    sport_type: Mapped[SportTypeEnum] = mapped_column(
+        SQLEnum(SportTypeEnum, name="sporttypeenum", native_enum=True, create_type=False),
+        nullable=False
+    )
     start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -105,8 +111,14 @@ class MatchDB(Base):
     event_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("events.event_id"), nullable=False)
     home_team_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("teams.team_id"), nullable=False)
     away_team_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("teams.team_id"), nullable=False)
-    sport_type: Mapped[SportTypeEnum] = mapped_column(SQLEnum(SportTypeEnum), nullable=False)
-    status: Mapped[MatchStatusEnum] = mapped_column(SQLEnum(MatchStatusEnum), default=MatchStatusEnum.SCHEDULED)
+    sport_type: Mapped[SportTypeEnum] = mapped_column(
+        SQLEnum(SportTypeEnum, name="sporttypeenum", native_enum=True, create_type=False),
+        nullable=False
+    )
+    status: Mapped[MatchStatusEnum] = mapped_column(
+        SQLEnum(MatchStatusEnum, name="matchstatusenum", native_enum=True, create_type=False),
+        default=MatchStatusEnum.SCHEDULED
+    )
     home_score: Mapped[int] = mapped_column(Integer, default=0)
     away_score: Mapped[int] = mapped_column(Integer, default=0)
     period_scores: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -147,7 +159,10 @@ class EmojiAssetDB(Base):
     __tablename__ = "emoji_assets"
     
     emoji_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
-    emoji_type: Mapped[EmojiTypeEnum] = mapped_column(SQLEnum(EmojiTypeEnum), nullable=False)
+    emoji_type: Mapped[EmojiTypeEnum] = mapped_column(
+        SQLEnum(EmojiTypeEnum, name="emojitypeenum", native_enum=True, create_type=False),
+        nullable=False
+    )
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -215,7 +230,10 @@ class UserProfileDB(Base):
     notification_preferences: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
     # Privacy settings
-    profile_visibility: Mapped[ProfileVisibilityEnum] = mapped_column(SQLEnum(ProfileVisibilityEnum), default=ProfileVisibilityEnum.PUBLIC)
+    profile_visibility: Mapped[ProfileVisibilityEnum] = mapped_column(
+        SQLEnum(ProfileVisibilityEnum, name="profilevisibilityenum", native_enum=True, create_type=False),
+        default=ProfileVisibilityEnum.PUBLIC
+    )
     show_favorite_teams: Mapped[bool] = mapped_column(Boolean, default=True)
     show_activity: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_friend_requests: Mapped[bool] = mapped_column(Boolean, default=True)

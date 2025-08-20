@@ -17,11 +17,39 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    op.execute("CREATE TYPE sporttypeenum AS ENUM ('football', 'basketball', 'tennis', 'cricket', 'rugby', 'hockey', 'baseball')")
-    op.execute("CREATE TYPE matchstatusenum AS ENUM ('scheduled', 'live', 'finished', 'cancelled', 'postponed')")
-    op.execute("CREATE TYPE userroleenum AS ENUM ('user', 'admin', 'moderator')")
-    op.execute("CREATE TYPE emojitypeenum AS ENUM ('clap', 'fire', 'heart', 'thumbs_up', 'celebration', 'shocked', 'angry', 'sad', 'laugh', 'goal')")
+    # Create enum types (idempotently, to avoid race conditions and re-run failures)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sporttypeenum') THEN
+            CREATE TYPE sporttypeenum AS ENUM ('football', 'basketball', 'tennis', 'cricket', 'rugby', 'hockey', 'baseball');
+        END IF;
+    END$$;
+    """)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'matchstatusenum') THEN
+            CREATE TYPE matchstatusenum AS ENUM ('scheduled', 'live', 'finished', 'cancelled', 'postponed');
+        END IF;
+    END$$;
+    """)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userroleenum') THEN
+            CREATE TYPE userroleenum AS ENUM ('user', 'admin', 'moderator');
+        END IF;
+    END$$;
+    """)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'emojitypeenum') THEN
+            CREATE TYPE emojitypeenum AS ENUM ('clap', 'fire', 'heart', 'thumbs_up', 'celebration', 'shocked', 'angry', 'sad', 'laugh', 'goal');
+        END IF;
+    END$$;
+    """)
     
     # Create users table
     op.create_table('users',
@@ -166,8 +194,8 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
     
-    # Drop enum types
-    op.execute("DROP TYPE emojitypeenum")
-    op.execute("DROP TYPE userroleenum")
-    op.execute("DROP TYPE matchstatusenum")
-    op.execute("DROP TYPE sporttypeenum")
+    # Drop enum types (safe if they exist)
+    op.execute("DROP TYPE IF EXISTS emojitypeenum")
+    op.execute("DROP TYPE IF EXISTS userroleenum")
+    op.execute("DROP TYPE IF EXISTS matchstatusenum")
+    op.execute("DROP TYPE IF EXISTS sporttypeenum")

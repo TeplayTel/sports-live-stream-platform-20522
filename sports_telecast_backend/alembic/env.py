@@ -1,7 +1,7 @@
 import asyncio
 import os
 from logging.config import fileConfig
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
@@ -92,19 +92,57 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """In this scenario we need to create an Engine
-    and associate a connection with the context.
+    """Run migrations using an async engine with a PostgreSQL advisory lock.
 
+    This prevents concurrent migration runs (e.g., when uvicorn reload spawns multiple processes)
+    which can otherwise deadlock on DDL like CREATE TYPE/CREATE TABLE.
     """
     connectable = create_async_engine(
         get_url(),
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    # Advisory lock configuration
+    # Use a stable bigint key; can be overridden via env var
+    lock_key = int(os.getenv("ALEMBIC_ADVISORY_LOCK_KEY", "653210987654321"))
+    # Max time in seconds to wait for lock before skipping on this process
+    timeout_seconds = float(os.getenv("ALEMBIC_LOCK_TIMEOUT", "30"))
 
-    await connectable.dispose()
+    try:
+        async with connectable.connect() as connection:
+            # Attempt to acquire advisory lock with timeout
+            start = asyncio.get_event_loop().time()
+            acquired = False
+            while True:
+                result = await connection.execute(
+                    text("SELECT pg_try_advisory_lock(:k)"),
+                    {"k": lock_key},
+                )
+                if bool(result.scalar()):
+                    acquired = True
+                    break
+
+                if asyncio.get_event_loop().time() - start > timeout_seconds:
+                    # Give up acquiring lock; assume another process is performing migrations
+                    print(
+                        f"[alembic] Could not acquire advisory lock {lock_key} within "
+                        f"{timeout_seconds}s; skipping migrations in this process"
+                    )
+                    return
+
+                await asyncio.sleep(0.5)
+
+            # Run migrations under the advisory lock
+            await connection.run_sync(do_run_migrations)
+
+            # Release lock (also released on connection close, but explicit is better)
+            if acquired:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:k)"),
+                    {"k": lock_key},
+                )
+    finally:
+        await connectable.dispose()
 
 
 def run_migrations_online() -> None:

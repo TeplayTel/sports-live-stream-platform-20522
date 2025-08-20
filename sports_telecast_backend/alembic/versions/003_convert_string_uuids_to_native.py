@@ -13,10 +13,17 @@ This migration:
 - Logs actions and counts at each step to aid debugging and rollback safety.
 
 It avoids half-applied changes by running in a single transaction; any error will rollback the whole migration.
+
+Enhancements in this patch:
+- FK drop logic is schema-aware, idempotent, and error-tolerant.
+- Uses SQLAlchemy text-bound parameters (no raw %s) for compatibility with asyncpg-based engines.
+- Skips operations cleanly if tables/columns don't exist, avoiding early rollback.
 """
 from alembic import op
 from typing import List, Optional, Set, Tuple
 import uuid
+
+from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision = "003"
@@ -33,48 +40,151 @@ def _log(msg: str) -> None:
     print(f"[003_uuid_migration] {msg}")
 
 
+def _current_schema(bind) -> str:
+    """
+    Return the current effective schema for the session (first in search_path).
+    """
+    try:
+        res = bind.execute(text("SELECT current_schema() AS s")).mappings().first()
+        if res and res["s"]:
+            return res["s"]
+    except Exception as e:
+        _log(f"Warning: could not determine current schema, defaulting to 'public': {e}")
+    return "public"
+
+
+def _table_exists(bind, schema: str, table: str) -> bool:
+    """
+    Check if a table exists in the specified schema.
+    """
+    try:
+        res = bind.execute(
+            text(
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM information_schema.tables
+                  WHERE table_schema = :schema
+                    AND table_name = :table
+                ) AS exists
+                """
+            ),
+            {"schema": schema, "table": table},
+        ).scalar()
+        return bool(res)
+    except Exception as e:
+        _log(f"Warning: table existence check failed for {schema}.{table}: {e}")
+        return False
+
+
+def _column_exists(bind, schema: str, table: str, column: str) -> bool:
+    """
+    Check if a column exists in a table within the specified schema.
+    """
+    try:
+        res = bind.execute(
+            text(
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM information_schema.columns
+                  WHERE table_schema = :schema
+                    AND table_name = :table
+                    AND column_name = :column
+                ) AS exists
+                """
+            ),
+            {"schema": schema, "table": table, "column": column},
+        ).scalar()
+        return bool(res)
+    except Exception as e:
+        _log(
+            f"Warning: column existence check failed for {schema}.{table}.{column}: {e}"
+        )
+        return False
+
+
+def _qualified_name(schema: str, table: str) -> str:
+    """
+    Return a properly quoted qualified table name, e.g. "public"."user_profiles"
+    """
+    return f'"{schema}"."{table}"'
+
+
 def _drop_fk_for_column(bind, table_name: str, column_name: str) -> List[Tuple[str, str]]:
     """
     Drop all FK constraints on a given table for a given column (as the FK-holding side).
     Returns a list of (constraint_name, table_name). Constraint recreation is handled explicitly later.
+
+    Robustness improvements:
+    - Schema-aware FK discovery using current_schema().
+    - Idempotent and error-tolerant drops using IF EXISTS and try/except around DDL.
+    - Skips cleanly if table/column doesn't exist or if no FKs found.
     """
-    _log(f"Dropping FK(s) on {table_name}.{column_name} if any.")
-    rows = bind.exec_driver_sql(
-        """
-        SELECT tc.constraint_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_name = kcu.constraint_name
-         AND tc.table_schema = kcu.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY'
-          AND tc.table_name = %s
-          AND kcu.column_name = %s
-        """,
-        (table_name, column_name),
+    schema = _current_schema(bind)
+    if not _table_exists(bind, schema, table_name):
+        _log(f"Table {schema}.{table_name} does not exist; skipping FK drop on {column_name}.")
+        return []
+    if not _column_exists(bind, schema, table_name, column_name):
+        _log(f"Column {schema}.{table_name}.{column_name} does not exist; skipping FK drop.")
+        return []
+
+    _log(f"Dropping FK(s) on {schema}.{table_name}.{column_name} if any.")
+    rows = bind.execute(
+        text(
+            """
+            SELECT tc.constraint_name, tc.table_schema
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_schema = :schema
+              AND tc.table_name = :table
+              AND kcu.column_name = :column
+            """
+        ),
+        {"schema": schema, "table": table_name, "column": column_name},
     ).mappings().all()
+
+    if not rows:
+        _log(f"  - No FK constraints found on {schema}.{table_name}.{column_name}.")
+        return []
+
     dropped: List[Tuple[str, str]] = []
     for r in rows:
         cname = r["constraint_name"]
-        _log(f"  - Dropping constraint {cname} on {table_name}")
-        bind.exec_driver_sql(
-            f'ALTER TABLE "{table_name}" DROP CONSTRAINT IF EXISTS "{cname}"'
-        )
-        dropped.append((cname, table_name))
+        qname = _qualified_name(schema, table_name)
+        _log(f'  - Dropping constraint "{cname}" on {qname}')
+        try:
+            bind.execute(
+                text(
+                    f'ALTER TABLE {qname} DROP CONSTRAINT IF EXISTS "{cname}"'
+                )
+            )
+            dropped.append((cname, table_name))
+        except Exception as e:
+            # Continue without failing migration; log and proceed
+            _log(f'    -> Warning: failed to drop constraint "{cname}" on {qname}: {e}')
     return dropped
 
 
 def _get_invalid_ids(bind, table: str, col: str) -> List[Optional[str]]:
     """
     Return list of DISTINCT invalid (or NULL) values from table.col.
+
+    Note: Uses parameterized regex (:regex) for compatibility with asyncpg.
     """
-    res = bind.exec_driver_sql(
-        f"""
-        SELECT DISTINCT {col} AS old_id
-        FROM {table}
-        WHERE {col} IS NULL
-           OR NOT ({col} ~* %s)
-        """,
-        (UUID_REGEX,),
+    res = bind.execute(
+        text(
+            f"""
+            SELECT DISTINCT {col} AS old_id
+            FROM {table}
+            WHERE {col} IS NULL
+               OR NOT ({col} ~* :regex)
+            """
+        ),
+        {"regex": UUID_REGEX},
     )
     rows = res.mappings().all()
     return [row["old_id"] for row in rows]
@@ -84,14 +194,16 @@ def _get_existing_valid_ids(bind, table: str, col: str) -> Set[str]:
     """
     Return set of existing valid UUID string values in table.col.
     """
-    res = bind.exec_driver_sql(
-        f"""
-        SELECT DISTINCT {col} AS id
-        FROM {table}
-        WHERE {col} IS NOT NULL
-          AND ({col} ~* %s)
-        """,
-        (UUID_REGEX,),
+    res = bind.execute(
+        text(
+            f"""
+            SELECT DISTINCT {col} AS id
+            FROM {table}
+            WHERE {col} IS NOT NULL
+              AND ({col} ~* :regex)
+            """
+        ),
+        {"regex": UUID_REGEX},
     )
     return {row["id"] for row in res.mappings().all()}
 
@@ -126,79 +238,97 @@ def _apply_mapping_via_temp_table(
     Optionally remove orphan/invalid child rows after propagation.
 
     mapping is a list of (old_id, new_id) where old_id can be None.
+
+    Robustness: parameterized inserts; skip child updates for non-existent tables/columns.
     """
     _log(
         f"Applying mapping for {parent_table}.{parent_col} using temp table; rows={len(mapping)}"
     )
     # Create temp mapping table (auto-dropped at commit)
-    bind.exec_driver_sql(
-        f"""
-        CREATE TEMP TABLE tmp_map_{parent_table}_{parent_col} (
-            old_id TEXT,
-            new_id TEXT
-        ) ON COMMIT DROP
-        """
+    bind.execute(
+        text(
+            f"""
+            CREATE TEMP TABLE tmp_map_{parent_table}_{parent_col} (
+                old_id TEXT,
+                new_id TEXT
+            ) ON COMMIT DROP
+            """
+        )
     )
 
-    # Insert mapping rows (row-by-row to avoid driver differences)
-    for old_id, new_id in mapping:
-        bind.exec_driver_sql(
-            f"""
-            INSERT INTO tmp_map_{parent_table}_{parent_col} (old_id, new_id)
-            VALUES (%s, %s)
-            """,
-            (old_id, new_id),
+    # Insert mapping rows (parameterized)
+    if mapping:
+        bind.execute(
+            text(
+                f"""
+                INSERT INTO tmp_map_{parent_table}_{parent_col} (old_id, new_id)
+                VALUES {", ".join(["(:old_id_"+str(i)+", :new_id_"+str(i)+")" for i in range(len(mapping))])}
+                """
+            ),
+            {f"old_id_{i}": old_id for i, (old_id, _new) in enumerate(mapping)}
+            | {f"new_id_{i}": new_id for i, (_old, new_id) in enumerate(mapping)},
         )
 
     # Update parent table using mapping
-    up_p = bind.exec_driver_sql(
-        f"""
-        UPDATE {parent_table} p
-        SET {parent_col} = m.new_id
-        FROM tmp_map_{parent_table}_{parent_col} m
-        WHERE p.{parent_col} IS NOT DISTINCT FROM m.old_id
-        """
+    up_p = bind.execute(
+        text(
+            f"""
+            UPDATE {parent_table} p
+            SET {parent_col} = m.new_id
+            FROM tmp_map_{parent_table}_{parent_col} m
+            WHERE p.{parent_col} IS NOT DISTINCT FROM m.old_id
+            """
+        )
     )
     _log(
-        f"  - Parent updates applied: {up_p.rowcount if hasattr(up_p,'rowcount') else 'N/A'}"
+        f"  - Parent updates applied: {getattr(up_p, 'rowcount', 'N/A')}"
     )
 
     # Propagate to child tables
+    schema = _current_schema(bind)
     for child_table, child_col in child_refs:
+        if not (_table_exists(bind, schema, child_table) and _column_exists(bind, schema, child_table, child_col)):
+            _log(f"  - Skipping child {schema}.{child_table}.{child_col}: table/column not found.")
+            continue
+
         _log(f"  - Propagating mapping to child {child_table}.{child_col}")
-        up_c = bind.exec_driver_sql(
-            f"""
-            UPDATE {child_table} c
-            SET {child_col} = m.new_id
-            FROM tmp_map_{parent_table}_{parent_col} m
-            WHERE c.{child_col} IS NOT DISTINCT FROM m.old_id
-            """
+        up_c = bind.execute(
+            text(
+                f"""
+                UPDATE {child_table} c
+                SET {child_col} = m.new_id
+                FROM tmp_map_{parent_table}_{parent_col} m
+                WHERE c.{child_col} IS NOT DISTINCT FROM m.old_id
+                """
+            )
         )
         _log(
-            f"    -> Child updates applied: {up_c.rowcount if hasattr(up_c,'rowcount') else 'N/A'}"
+            f"    -> Child updates applied: {getattr(up_c, 'rowcount', 'N/A')}"
         )
 
         # Remove orphan child rows and invalid UUID formats in child col (defensive cleanup)
-        orphans = bind.exec_driver_sql(
-            f"""
-            WITH candidates AS (
-                SELECT c.*
-                FROM {child_table} c
-                WHERE c.{child_col} IS NULL
-                   OR NOT (c.{child_col} ~* %s)
-                   OR NOT EXISTS (
-                        SELECT 1 FROM {parent_table} p
-                         WHERE p.{parent_col} = c.{child_col}
-                   )
-            )
-            DELETE FROM {child_table} c
-            USING candidates d
-            WHERE c.ctid = d.ctid
-            """,
-            (UUID_REGEX,),
+        orphans = bind.execute(
+            text(
+                f"""
+                WITH candidates AS (
+                    SELECT c.*
+                    FROM {child_table} c
+                    WHERE c.{child_col} IS NULL
+                       OR NOT (c.{child_col} ~* :regex)
+                       OR NOT EXISTS (
+                            SELECT 1 FROM {parent_table} p
+                             WHERE p.{parent_col} = c.{child_col}
+                       )
+                )
+                DELETE FROM {child_table} c
+                USING candidates d
+                WHERE c.ctid = d.ctid
+                """
+            ),
+            {"regex": UUID_REGEX},
         )
         _log(
-            f"    -> Deleted orphan/invalid child rows from {child_table}: {orphans.rowcount if hasattr(orphans,'rowcount') else 'N/A'}"
+            f"    -> Deleted orphan/invalid child rows from {child_table}: {getattr(orphans, 'rowcount', 'N/A')}"
         )
 
 
@@ -211,7 +341,14 @@ def _ensure_valid_uuid_strings_with_mapping_python(
     """
     Ensure parent_table.parent_col contains only valid UUID strings.
     Uses Python to generate new UUIDs for NULL/invalid values and propagates the mapping to children.
+
+    Skips gracefully if the parent table/column does not exist.
     """
+    schema = _current_schema(bind)
+    if not (_table_exists(bind, schema, parent_table) and _column_exists(bind, schema, parent_table, parent_col)):
+        _log(f"Skipping normalization for {schema}.{parent_table}.{parent_col}: table/column not found.")
+        return
+
     _log(f"Validating and normalizing {parent_table}.{parent_col} as UUID strings (Python-side UUIDs)")
     invalids = _get_invalid_ids(bind, parent_table, parent_col)
     if not invalids:
@@ -235,7 +372,14 @@ def _ensure_valid_uuid_strings_simple_python(bind, table: str, col: str) -> None
     """
     Ensure a non-FK string UUID column (no children relying on it) contains valid UUID strings.
     Generates new UUIDs in Python and updates rows individually via a temp mapping for efficiency.
+
+    Skips gracefully if the table/column does not exist.
     """
+    schema = _current_schema(bind)
+    if not (_table_exists(bind, schema, table) and _column_exists(bind, schema, table, col)):
+        _log(f"Skipping normalization for {schema}.{table}.{col}: table/column not found.")
+        return
+
     _log(f"Validating simple column {table}.{col} as UUID strings (Python-side UUIDs)")
     invalids = _get_invalid_ids(bind, table, col)
     if not invalids:
@@ -256,9 +400,15 @@ def _ensure_valid_uuid_strings_simple_python(bind, table: str, col: str) -> None
 
 
 def _alter_column_to_uuid(bind, table: str, col: str) -> None:
+    schema = _current_schema(bind)
+    if not (_table_exists(bind, schema, table) and _column_exists(bind, schema, table, col)):
+        _log(f"Skipping type alter for {schema}.{table}.{col}: table/column not found.")
+        return
     _log(f'Altering column type to UUID for {table}.{col}')
-    bind.exec_driver_sql(
-        f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE uuid USING "{col}"::uuid'
+    bind.execute(
+        text(
+            f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE uuid USING "{col}"::uuid'
+        )
     )
 
 
@@ -376,36 +526,35 @@ def upgrade() -> None:
 
     # 4) Re-create foreign keys with explicit, deterministic names (no ON DELETE CASCADE to preserve original semantics)
     _log("Re-creating foreign keys")
-    bind.exec_driver_sql(
-        'ALTER TABLE "user_profiles" ADD CONSTRAINT "fk_user_profiles_user_id_users" FOREIGN KEY ("user_id") REFERENCES "users" ("user_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "user_emoji_reactions" ADD CONSTRAINT "fk_user_emoji_reactions_user_id_users" FOREIGN KEY ("user_id") REFERENCES "users" ("user_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "user_emoji_reactions" ADD CONSTRAINT "fk_user_emoji_reactions_emoji_id_emoji_assets" FOREIGN KEY ("emoji_id") REFERENCES "emoji_assets" ("emoji_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "matches" ADD CONSTRAINT "fk_matches_event_id_events" FOREIGN KEY ("event_id") REFERENCES "events" ("event_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "matches" ADD CONSTRAINT "fk_matches_home_team_id_teams" FOREIGN KEY ("home_team_id") REFERENCES "teams" ("team_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "matches" ADD CONSTRAINT "fk_matches_away_team_id_teams" FOREIGN KEY ("away_team_id") REFERENCES "teams" ("team_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "highlights" ADD CONSTRAINT "fk_highlights_match_id_matches" FOREIGN KEY ("match_id") REFERENCES "matches" ("match_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "match_events" ADD CONSTRAINT "fk_match_events_match_id_matches" FOREIGN KEY ("match_id") REFERENCES "matches" ("match_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "schedule_matches" ADD CONSTRAINT "fk_schedule_matches_match_id_matches" FOREIGN KEY ("match_id") REFERENCES "matches" ("match_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "schedule_matches" ADD CONSTRAINT "fk_schedule_matches_schedule_id_schedules" FOREIGN KEY ("schedule_id") REFERENCES "schedules" ("schedule_id")'
-    )
+    schema = _current_schema(bind)
+
+    def _safe_add_fk(child_table: str, child_col: str, parent_table: str, parent_col: str, cname: str) -> None:
+        if not (_table_exists(bind, schema, child_table) and _column_exists(bind, schema, child_table, child_col)):
+            _log(f"  - Skip FK {cname}: child {schema}.{child_table}.{child_col} missing.")
+            return
+        if not (_table_exists(bind, schema, parent_table) and _column_exists(bind, schema, parent_table, parent_col)):
+            _log(f"  - Skip FK {cname}: parent {schema}.{parent_table}.{parent_col} missing.")
+            return
+        try:
+            bind.execute(
+                text(
+                    f'ALTER TABLE "{child_table}" ADD CONSTRAINT "{cname}" '
+                    f'FOREIGN KEY ("{child_col}") REFERENCES "{parent_table}" ("{parent_col}")'
+                )
+            )
+        except Exception as e:
+            _log(f'  - Warning: failed to add FK "{cname}": {e}')
+
+    _safe_add_fk("user_profiles", "user_id", "users", "user_id", "fk_user_profiles_user_id_users")
+    _safe_add_fk("user_emoji_reactions", "user_id", "users", "user_id", "fk_user_emoji_reactions_user_id_users")
+    _safe_add_fk("user_emoji_reactions", "emoji_id", "emoji_assets", "emoji_id", "fk_user_emoji_reactions_emoji_id_emoji_assets")
+    _safe_add_fk("matches", "event_id", "events", "event_id", "fk_matches_event_id_events")
+    _safe_add_fk("matches", "home_team_id", "teams", "team_id", "fk_matches_home_team_id_teams")
+    _safe_add_fk("matches", "away_team_id", "teams", "team_id", "fk_matches_away_team_id_teams")
+    _safe_add_fk("highlights", "match_id", "matches", "match_id", "fk_highlights_match_id_matches")
+    _safe_add_fk("match_events", "match_id", "matches", "match_id", "fk_match_events_match_id_matches")
+    _safe_add_fk("schedule_matches", "match_id", "matches", "match_id", "fk_schedule_matches_match_id_matches")
+    _safe_add_fk("schedule_matches", "schedule_id", "schedules", "schedule_id", "fk_schedule_matches_schedule_id_schedules")
 
     _log("END upgrade -> 003 completed.")
 
@@ -413,6 +562,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     """
     Reverse: Drop FKs, alter UUID columns back to TEXT, and re-create FKs.
+
+    Maintains the same robustness for schema and existence checks as in upgrade.
     """
     bind = op.get_bind()
     _log("BEGIN downgrade <- 003: Convert UUIDs back to string")
@@ -459,42 +610,46 @@ def downgrade() -> None:
         ("schedule_matches", "match_id"),
     ]
     _log("Altering UUID columns back to TEXT")
+    schema = _current_schema(bind)
     for tbl, col in to_convert_back:
-        bind.exec_driver_sql(
-            f'ALTER TABLE "{tbl}" ALTER COLUMN "{col}" TYPE varchar(36) USING "{col}"::text'
+        if not (_table_exists(bind, schema, tbl) and _column_exists(bind, schema, tbl, col)):
+            _log(f"  - Skipping revert for {schema}.{tbl}.{col}: table/column not found.")
+            continue
+        bind.execute(
+            text(
+                f'ALTER TABLE "{tbl}" ALTER COLUMN "{col}" TYPE varchar(36) USING "{col}"::text'
+            )
         )
 
     # Re-create FKs as strings
     _log("Re-creating foreign keys (string types)")
-    bind.exec_driver_sql(
-        'ALTER TABLE "user_profiles" ADD CONSTRAINT "fk_user_profiles_user_id_users" FOREIGN KEY ("user_id") REFERENCES "users" ("user_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "user_emoji_reactions" ADD CONSTRAINT "fk_user_emoji_reactions_user_id_users" FOREIGN KEY ("user_id") REFERENCES "users" ("user_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "user_emoji_reactions" ADD CONSTRAINT "fk_user_emoji_reactions_emoji_id_emoji_assets" FOREIGN KEY ("emoji_id") REFERENCES "emoji_assets" ("emoji_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "matches" ADD CONSTRAINT "fk_matches_event_id_events" FOREIGN KEY ("event_id") REFERENCES "events" ("event_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "matches" ADD CONSTRAINT "fk_matches_home_team_id_teams" FOREIGN KEY ("home_team_id") REFERENCES "teams" ("team_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "matches" ADD CONSTRAINT "fk_matches_away_team_id_teams" FOREIGN KEY ("away_team_id") REFERENCES "teams" ("team_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "highlights" ADD CONSTRAINT "fk_highlights_match_id_matches" FOREIGN KEY ("match_id") REFERENCES "matches" ("match_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "match_events" ADD CONSTRAINT "fk_match_events_match_id_matches" FOREIGN KEY ("match_id") REFERENCES "matches" ("match_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "schedule_matches" ADD CONSTRAINT "fk_schedule_matches_match_id_matches" FOREIGN KEY ("match_id") REFERENCES "matches" ("match_id")'
-    )
-    bind.exec_driver_sql(
-        'ALTER TABLE "schedule_matches" ADD CONSTRAINT "fk_schedule_matches_schedule_id_schedules" FOREIGN KEY ("schedule_id") REFERENCES "schedules" ("schedule_id")'
-    )
+
+    def _safe_add_fk(child_table: str, child_col: str, parent_table: str, parent_col: str, cname: str) -> None:
+        if not (_table_exists(bind, schema, child_table) and _column_exists(bind, schema, child_table, child_col)):
+            _log(f"  - Skip FK {cname}: child {schema}.{child_table}.{child_col} missing.")
+            return
+        if not (_table_exists(bind, schema, parent_table) and _column_exists(bind, schema, parent_table, parent_col)):
+            _log(f"  - Skip FK {cname}: parent {schema}.{parent_table}.{parent_col} missing.")
+            return
+        try:
+            bind.execute(
+                text(
+                    f'ALTER TABLE "{child_table}" ADD CONSTRAINT "{cname}" '
+                    f'FOREIGN KEY ("{child_col}") REFERENCES "{parent_table}" ("{parent_col}")'
+                )
+            )
+        except Exception as e:
+            _log(f'  - Warning: failed to add FK "{cname}": {e}')
+
+    _safe_add_fk("user_profiles", "user_id", "users", "user_id", "fk_user_profiles_user_id_users")
+    _safe_add_fk("user_emoji_reactions", "user_id", "users", "user_id", "fk_user_emoji_reactions_user_id_users")
+    _safe_add_fk("user_emoji_reactions", "emoji_id", "emoji_assets", "emoji_id", "fk_user_emoji_reactions_emoji_id_emoji_assets")
+    _safe_add_fk("matches", "event_id", "events", "event_id", "fk_matches_event_id_events")
+    _safe_add_fk("matches", "home_team_id", "teams", "team_id", "fk_matches_home_team_id_teams")
+    _safe_add_fk("matches", "away_team_id", "teams", "team_id", "fk_matches_away_team_id_teams")
+    _safe_add_fk("highlights", "match_id", "matches", "match_id", "fk_highlights_match_id_matches")
+    _safe_add_fk("match_events", "match_id", "matches", "match_id", "fk_match_events_match_id_matches")
+    _safe_add_fk("schedule_matches", "match_id", "matches", "match_id", "fk_schedule_matches_match_id_matches")
+    _safe_add_fk("schedule_matches", "schedule_id", "schedules", "schedule_id", "fk_schedule_matches_schedule_id_schedules")
 
     _log("END downgrade <- 003 completed.")

@@ -49,13 +49,14 @@ class UserRepository(BaseRepository):
         Returns:
             UserDB: Created user record
         """
-        # Role must always be the default lowercase 'user'
+        # Ensure role is set using the uppercase enum member to match DB enum (USER, ADMIN, MODERATOR)
+        # Even if the underlying value may be lowercase, the DB enum expects the member 'USER'.
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
-            role=UserRoleEnum.USER,  # hardcoded to 'user'
+            role=UserRoleEnum.USER,  # Set explicit default role to USER
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )

@@ -38,6 +38,8 @@ class AuthRequiredMiddleware(BaseHTTPMiddleware):
             "/auth/register",
             "/auth/login",
             "/openapi.json",  # Allow OpenAPI spec without auth
+            "/",                 # public health
+            "/health/database",  # public db health
         }
         # Prefix-based exemptions to allow FastAPI docs UIs and any nested assets
         self.exempt_prefixes = ["/docs", "/redoc"]

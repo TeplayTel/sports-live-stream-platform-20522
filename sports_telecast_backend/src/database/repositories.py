@@ -70,6 +70,10 @@ class UserRepository(BaseRepository):
             UserDB: Created user record
         """
         # Normalize role to ensure lowercase-backed enum; default to USER for new registrations
+        # IMPORTANT: Never pass Enum.name (e.g., "USER") into the DB; always use the Enum member or its .value (lowercase).
+        # If you see uppercase values in SQL logs, it likely indicates:
+        #   1) A DB enum type with uppercase labels exists (userroleenum: 'USER','ADMIN','MODERATOR'), while our code expects lowercase values, or
+        #   2) Some upstream code assigned role="USER" (string) instead of the Enum or lowercase.
         normalized_role = self._normalize_role(getattr(user_data, "role", None))
 
         # Log the exact data that will be used to create the UserDB record

@@ -23,7 +23,28 @@ To run Alembic migrations, ensure the `src` package is importable. Always run Al
 The Alembic `env.py` also prepends the backend root to `sys.path` automatically, so running from this directory typically just works. If you still see `ModuleNotFoundError: No module named 'src'`, verify you are in:
 sports-live-stream-platform-20522/sports_telecast_backend
 
-## 🧾 Alembic Version Column Width
+## 🧪 Alembic simple reset for diagnostics
+
+A simplified initial migration is included that creates only a minimal `users` table. For a clean development reset or diagnostics, follow these steps from the backend root (this does not drop existing tables; it resets migration history and applies the new head):
+
+1) Stamp the database to base (no migrations considered applied):
+   PYTHONPATH=. alembic stamp base
+
+2) Upgrade schema to head (applies the new minimal users migration):
+   PYTHONPATH=. alembic upgrade head
+
+3) Verify:
+   - The `users` table exists with columns:
+     user_id (serial PK), email (unique), password_hash, created_at
+   - Alembic version shows the head revision:
+     PYTHONPATH=. alembic current
+
+Notes:
+- Initial migration file: alembic/versions/001_create_simple_users_table.py
+- The migration is robust: if a `users` table already exists, it will add missing columns and ensure a unique index on email.
+- For production, replace this diagnostic reset with a complete migration history that reflects the full schema.
+
+## 🧬 Alembic Version Column Width
 
 Alembic migrations may generate revision identifiers exceeding 32 characters. To prevent failures when the `alembic_version.version_num` column is `VARCHAR(32)`, Alembic env includes logic to widen to `VARCHAR(64)` automatically and applies a temporary in-memory truncation patch only when needed.
 
@@ -102,44 +123,6 @@ Schema management:
 - The app relies on Alembic migrations only.
 - Migrations can be run manually using: `PYTHONPATH=. alembic upgrade head` (ensure the virtualenv is activated and env vars are set).
 - The helper `python init_db.py` runs Alembic using the configured URL with async engine and an advisory lock.
-
-### Ensuring the "users" table exists
-
-This project includes an idempotent migration `007_users_table_jwt_prep` that:
-- Ensures the enum `userroleenum` exists.
-- Creates the `users` table if missing (UUID PK).
-- Adds any missing columns.
-- Ensures a primary key on `user_id`.
-- Creates unique indexes on `email` and `username` if no duplicates exist.
-
-To apply all migrations against your configured database, run one of:
-- Preferred:
-  ```bash
-  python init_db.py
-  ```
-- Alembic CLI:
-  ```bash
-  PYTHONPATH=. alembic upgrade head
-  ```
-
-If you get:
-- asyncpg.exceptions.UndefinedTableError: relation "users" does not exist (e.g., when calling `/auth/register` or `/auth/login`):
-
-Steps to resolve:
-1) Verify your `.env` points to the exact same DB the server uses (DATABASE_URL or POSTGRES_*).  
-2) Apply migrations:
-   ```bash
-   python init_db.py
-   # or
-   PYTHONPATH=. alembic upgrade head
-   ```
-3) If the DB has a partial/old state (development only), you may run:
-   ```bash
-   python manage_db.py alembic-upgrade head
-   # If necessary for dev cleanup (affects migration tracking):
-   python manage_db.py alembic-reset
-   PYTHONPATH=. alembic upgrade head
-   ```
 
 ## 📚 API Documentation
 

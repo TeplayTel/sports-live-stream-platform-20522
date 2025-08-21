@@ -28,8 +28,8 @@ class MatchStatusEnum(enum.Enum):
 
 class UserRoleEnum(enum.Enum):
     """User role enumeration stored as lowercase strings to match DB enum userroleenum."""
-    USER = "user"
-    ADMIN = "admin"
+    USER = "user"      # lowercase values to match DB
+    ADMIN = "admin" 
     MODERATOR = "moderator"
 
 class EmojiTypeEnum(enum.Enum):

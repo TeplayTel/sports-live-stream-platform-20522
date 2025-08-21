@@ -70,6 +70,15 @@ class UserRepository(BaseRepository):
             except Exception:
                 role_value = UserRoleEnum.USER
 
+        # Final defensive normalization: ensure enum constructed from lowercase string
+        role_lower = getattr(role_value, "value", role_value)
+        if isinstance(role_lower, str):
+            role_lower = role_lower.strip().lower()
+        try:
+            role_value = UserRoleEnum(role_lower)
+        except Exception:
+            role_value = UserRoleEnum.USER
+
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
@@ -79,6 +88,36 @@ class UserRepository(BaseRepository):
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )
+
+        # Temporary verification before commit: ensure only lowercase hits the DB
+        # This block can be removed after confirming logs in CI.
+        role_before_commit = getattr(user, "role", None)
+        role_before_commit_str = getattr(role_before_commit, "value", role_before_commit)
+        if isinstance(role_before_commit_str, str):
+            role_before_commit_str = role_before_commit_str.strip()
+        # Normalize in-memory if somehow uppercase was set
+        if isinstance(role_before_commit_str, str) and role_before_commit_str != role_before_commit_str.lower():
+            # Log and fix before commit
+            try:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Normalizing user.role from %s to %s before commit",
+                    role_before_commit_str,
+                    role_before_commit_str.lower(),
+                )
+            except Exception:
+                # logging is best-effort; continue
+                pass
+            try:
+                user.role = UserRoleEnum(role_before_commit_str.lower())
+            except Exception:
+                user.role = UserRoleEnum.USER
+
+        # Assert lowercasing just before commit (temporary diagnostic)
+        _role_commit_val = getattr(user.role, "value", user.role)
+        if isinstance(_role_commit_val, str):
+            assert _role_commit_val in {"user", "admin", "moderator"} and _role_commit_val == _role_commit_val.lower(), \
+                f"User.role must be lowercase user/admin/moderator; got {_role_commit_val!r}"
 
         self.session.add(user)
         await self.session.commit()

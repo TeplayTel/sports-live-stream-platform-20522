@@ -80,6 +80,7 @@ def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
 
     Behavior:
     - Normalizes role to a lowercase string ('user', 'admin', 'moderator') matching DB/OpenAPI.
+    - Note: This normalization is for response payloads only; DB-level normalization is enforced in UserRepository.create_user.
     - Coerces preferences None -> {} to satisfy API schema.
     - Provides timestamp fallbacks if DB defaults aren't hydrated yet.
 

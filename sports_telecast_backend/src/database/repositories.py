@@ -72,6 +72,20 @@ class UserRepository(BaseRepository):
         # Normalize role to ensure lowercase-backed enum; default to USER for new registrations
         normalized_role = self._normalize_role(getattr(user_data, "role", None))
 
+        # Log the exact data that will be used to create the UserDB record
+        # Avoid logging sensitive raw password; log only the presence of a hash (length) for debugging.
+        input_payload = {
+            "email": user_data.email,
+            "username": user_data.username,
+            "full_name": user_data.full_name,
+            "incoming_role": getattr(user_data, "role", None),
+            "normalized_role": normalized_role.value if hasattr(normalized_role, "value") else str(normalized_role),
+            "is_active": True,
+            "preferences": {},
+            "password_hash_len": len(password_hash) if isinstance(password_hash, str) else None,
+        }
+        print("Creating UserDB with data:", input_payload)
+
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
@@ -81,7 +95,6 @@ class UserRepository(BaseRepository):
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )
-        print("----=role", normalized_role)
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)

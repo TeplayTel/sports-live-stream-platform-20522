@@ -13,20 +13,19 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-# Attempt to import the project's async session dependency.
-# Adjusted to match existing project structure: src/database/connection.py
+
+# Attempt to import the project's async session context manager.
+# get_db_session is an async context manager that yields an AsyncSession.
 try:
-    # get_db_session should yield an AsyncSession when used as a dependency
     from src.database.connection import get_db_session  # type: ignore
 except Exception as e:  # pragma: no cover - defensive in case of refactor
     raise RuntimeError(
         "Failed to import get_db_session from src.database.connection. "
-        "Please ensure the async DB session dependency is available."
+        "Please ensure the async DB session context manager is available."
     ) from e
 
 router = APIRouter(
@@ -76,12 +75,12 @@ class DebugTablesResponse(BaseModel):
         "Security: This endpoint should NOT be exposed in production."
     ),
 )
-async def debug_tables(db: AsyncSession = Depends(get_db_session)) -> DebugTablesResponse:
+async def debug_tables() -> DebugTablesResponse:
     """
     Debug endpoint to inspect database tables and Alembic migration version.
 
     Parameters:
-        db (AsyncSession): The application's async SQLAlchemy session injected via dependency.
+        None (uses internal async DB session context manager)
 
     Returns:
         DebugTablesResponse: Object containing:
@@ -94,64 +93,46 @@ async def debug_tables(db: AsyncSession = Depends(get_db_session)) -> DebugTable
         HTTPException: If a database error occurs while executing inspection queries.
     """
     try:
-        # List all relations in public schema. Using pg_catalog to avoid requiring SQLAlchemy inspector sync path.
-        tables_sql = text(
-            """
-            SELECT n.nspname AS schema,
-                   c.relname AS name,
-                   c.relkind AS type
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public'
-              AND c.relkind IN ('r','p','v','m','f') -- tables, partitions, views, matviews, foreign tables
-            ORDER BY c.relname;
-            """
-        )
-        result = await db.execute(tables_sql)
-        rows = result.mappings().all()
-        tables: List[DebugTableInfo] = [
-            DebugTableInfo(schema=row["schema"], name=row["name"], type=row["type"])
-            for row in rows
-        ]
+        # Use the async context manager to acquire a real AsyncSession instance.
+        async with get_db_session() as session:  # type: AsyncSession
+            # List all relations in public schema. Using pg_catalog to avoid requiring SQLAlchemy inspector sync path.
+            tables_sql = text(
+                """
+                SELECT n.nspname AS schema,
+                       c.relname AS name,
+                       c.relkind AS type
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relkind IN ('r','p','v','m','f') -- tables, partitions, views, matviews, foreign tables
+                ORDER BY c.relname;
+                """
+            )
+            result = await session.execute(tables_sql)
+            rows = result.mappings().all()
+            tables: List[DebugTableInfo] = [
+                DebugTableInfo(schema=row["schema"], name=row["name"], type=row["type"])
+                for row in rows
+            ]
 
-        # Try to fetch Alembic version if alembic_version table exists.
-        # We guard the select with EXISTS check to avoid errors when the table is missing.
-        version_sql = text(
-            """
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1
-                    FROM pg_catalog.pg_class c
-                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                    WHERE n.nspname='public' AND c.relname='alembic_version' AND c.relkind='r'
-                ) THEN
-                    -- dummy, will be replaced by select below
-                    NULL;
-                END IF;
-            END $$;
-            """
-        )
-        # Execute the guard DO block to ensure compatibility in environments without the table.
-        await db.execute(version_sql)
+            # Try to fetch Alembic version if alembic_version table exists.
+            # We attempt selection and handle absence gracefully.
+            alembic_version: Optional[str] = None
+            try:
+                version_select = text("SELECT version_num FROM alembic_version LIMIT 1;")
+                vresult = await session.execute(version_select)
+                vrow = vresult.first()
+                if vrow:
+                    alembic_version = vrow[0]
+            except Exception:
+                # Table doesn't exist or is not accessible; ignore for debug output
+                alembic_version = None
 
-        # Now attempt selection; if missing, catch gracefully.
-        alembic_version: Optional[str] = None
-        try:
-            version_select = text("SELECT version_num FROM alembic_version LIMIT 1;")
-            vresult = await db.execute(version_select)
-            vrow = vresult.first()
-            if vrow:
-                alembic_version = vrow[0]
-        except Exception:
-            # Table doesn't exist or not accessible
-            alembic_version = None
-
-        return DebugTablesResponse(
-            environment="development",
-            tables=tables,
-            alembic_version=alembic_version,
-            notes="Do not enable this endpoint in production.",
-        )
+            return DebugTablesResponse(
+                environment="development",
+                tables=tables,
+                alembic_version=alembic_version,
+                notes="Do not enable this endpoint in production.",
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database inspection error: {e}") from e

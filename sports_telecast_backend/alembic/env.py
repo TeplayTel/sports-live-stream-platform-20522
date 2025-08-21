@@ -1,16 +1,26 @@
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
-from sqlalchemy import pool, text
+from pathlib import Path
 
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
-# Import your models
-from src.database.connection import Base
-# Import all models to ensure they are registered with SQLAlchemy
-from src.database.models import (  # noqa: F401 - Import needed for Alembic model discovery
+# Ensure 'src' package is importable when Alembic runs.
+# Alembic executes from this file's directory; add backend root to sys.path.
+# backend_root = sports-live-stream-platform-20522/sports_telecast_backend
+_CURRENT_DIR = Path(__file__).resolve().parent
+_BACKEND_ROOT = _CURRENT_DIR.parent  # points to sports_telecast_backend
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
+# Import your models now that PYTHONPATH is ensured
+from src.database.connection import Base  # noqa: E402
+# Import all models to ensure they are registered with SQLAlchemy (for autogenerate)
+from src.database.models import (  # noqa: F401, E402
     UserDB, TeamDB, EventDB, MatchDB, MatchEventDB,
     EmojiAssetDB, UserEmojiReactionDB, HighlightDB,
     UserProfileDB, ScheduleDB, ScheduleMatchDB

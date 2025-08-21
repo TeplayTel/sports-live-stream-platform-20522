@@ -10,13 +10,22 @@ A comprehensive FastAPI backend for a sports live streaming platform that provid
 - Real-time WebSocket updates
 - Users, Profiles, Emojis, Matches, Highlights data models
 
-## 🧪 Alembic Version Column Width
+## ⚙️ Alembic and PYTHONPATH (Importing `src`)
 
-Alembic migrations may generate revision identifiers exceeding 32 characters. To prevent failures on applying migrations when the `alembic_version.version_num` column is limited to `VARCHAR(32)`, this repository includes machinery in alembic/env.py to widen the column to `VARCHAR(64)` automatically and temporarily patch in-memory behavior when needed.
+To run Alembic migrations, ensure the `src` package is importable. Always run Alembic from the backend root and set `PYTHONPATH=.` (the backend root):
 
-No revision IDs are shortened; only the column width is increased to maintain compatibility and best practices.
+- Unix/macOS:
+  PYTHONPATH=. alembic upgrade head
 
-If you encounter errors related to `alembic_version.version_num` length, ensure you have applied migrations to head.
+- Windows (PowerShell):
+  $env:PYTHONPATH="."; alembic upgrade head
+
+The Alembic `env.py` also prepends the backend root to `sys.path` automatically, so running from this directory typically just works. If you still see `ModuleNotFoundError: No module named 'src'`, verify you are in:
+sports-live-stream-platform-20522/sports_telecast_backend
+
+## 🧾 Alembic Version Column Width
+
+Alembic migrations may generate revision identifiers exceeding 32 characters. To prevent failures when the `alembic_version.version_num` column is `VARCHAR(32)`, Alembic env includes logic to widen to `VARCHAR(64)` automatically and applies a temporary in-memory truncation patch only when needed.
 
 ## 🏁 Quick Start
 
@@ -54,12 +63,12 @@ If you encounter errors related to `alembic_version.version_num` length, ensure 
    # Option A: helper script (recommended)
    python init_db.py
    # Option B: Alembic CLI (ensure env vars are set)
-   alembic upgrade head
+   PYTHONPATH=. alembic upgrade head
    ```
 
 6. Start the server:
    ```bash
-   # Preview expects FastAPI to listen on port 3001
+   # FastAPI listens on port 3001 for the preview
    PYTHONPATH=. uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
    ```
 
@@ -78,7 +87,7 @@ If developing in Docker / containerized environments:
   ```
   DATABASE_URL=postgresql://appuser:dbuser123@sports_telecast_db:5001/myapp
   ```
-- The default DB user/role is `appuser`. There is no `kavia` user/role, so never use it in your settings.
+- The default DB user/role is `appuser`.
 
 If developing directly on localhost (no container):
 - Use `localhost` for the host fields.
@@ -91,7 +100,7 @@ Environment Template: see `.env.example` for the correct configuration.
 
 Schema management:
 - The app relies on Alembic migrations only.
-- Migrations can be run manually using: `alembic upgrade head` (ensure the virtualenv is activated and env vars are set).
+- Migrations can be run manually using: `PYTHONPATH=. alembic upgrade head` (ensure the virtualenv is activated and env vars are set).
 - The helper `python init_db.py` runs Alembic using the configured URL with async engine and an advisory lock.
 
 ### Ensuring the "users" table exists
@@ -110,7 +119,7 @@ To apply all migrations against your configured database, run one of:
   ```
 - Alembic CLI:
   ```bash
-  alembic upgrade head
+  PYTHONPATH=. alembic upgrade head
   ```
 
 If you get:
@@ -122,14 +131,14 @@ Steps to resolve:
    ```bash
    python init_db.py
    # or
-   alembic upgrade head
+   PYTHONPATH=. alembic upgrade head
    ```
 3) If the DB has a partial/old state (development only), you may run:
    ```bash
    python manage_db.py alembic-upgrade head
    # If necessary for dev cleanup (affects migration tracking):
    python manage_db.py alembic-reset
-   alembic upgrade head
+   PYTHONPATH=. alembic upgrade head
    ```
 
 ## 📚 API Documentation
@@ -151,6 +160,6 @@ Test WebSocket connections:
 python test_websocket.py
 ```
 
-## 🏗️ Architecture
+## 🎯 Architecture
 
 See IMPLEMENTATION_SUMMARY.md for implementation details and operational tips.

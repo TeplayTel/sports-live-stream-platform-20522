@@ -1,5 +1,5 @@
 from typing import Optional, List
-from sqlalchemy import String, DateTime, Boolean, Integer, Text, JSON, ForeignKey, Enum as SQLEnum
+from sqlalchemy import String, DateTime, Boolean, Integer, Text, JSON, ForeignKey, Enum as SQLEnum, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -48,22 +48,44 @@ class EmojiTypeEnum(enum.Enum):
 # Database Models
 class UserDB(Base):
     __tablename__ = "users"
-    
+
+    # NOTE FOR MAINTAINERS:
+    # We intentionally store 'role' as a String(32) with a SQL CHECK constraint rather than a native DB Enum.
+    # Rationale:
+    #   - Avoids coupling to PostgreSQL enum type management across environments/migrations.
+    #   - Keeps values human-readable and compatible with OpenAPI ('user' | 'admin' | 'moderator').
+    # Validation:
+    #   - A database-level CHECK constraint enforces allowed values.
+    #   - Application code should continue to normalize role to lowercase strings.
+    # Migration:
+    #   - Ensure Alembic migration updates existing column/type and adds the CHECK constraint if needed.
+
     user_id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    role: Mapped[UserRoleEnum] = mapped_column(
-        SQLEnum(UserRoleEnum, name="userroleenum", native_enum=True, create_type=False),
-        default=UserRoleEnum.USER
+    # Store as string with check constraint, default 'user'
+    role: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="user"
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     preferences: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
+
+    # Table-level constraints
+    __table_args__ = (
+        # Only allow these three lowercase values
+        CheckConstraint(
+            "role IN ('user','admin','moderator')",
+            name="ck_users_role_valid_values"
+        ),
+    )
+
     # Relationships
     emoji_reactions: Mapped[List["UserEmojiReactionDB"]] = relationship("UserEmojiReactionDB", back_populates="user")
     profile: Mapped[Optional["UserProfileDB"]] = relationship("UserProfileDB", back_populates="user", uselist=False)

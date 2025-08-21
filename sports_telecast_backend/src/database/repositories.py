@@ -95,7 +95,8 @@ class UserRepository(BaseRepository):
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
-            role=normalized_role,
+            # Store as lowercase string in DB to satisfy CHECK constraint
+            role=(normalized_role.value if hasattr(normalized_role, "value") else str(normalized_role)).lower(),
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )

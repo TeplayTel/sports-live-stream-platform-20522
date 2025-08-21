@@ -86,7 +86,7 @@ def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
 
     Returns a dict compliant with UserResponse schema.
     """
-    # Normalize role to lowercase string value
+    # Normalize role to lowercase string value (ORM now stores role as a string with a DB CHECK constraint)
     raw_role = getattr(user_db, "role", None)
     role_value = getattr(raw_role, "value", raw_role) if raw_role is not None else "user"
     if not isinstance(role_value, str):

@@ -113,6 +113,7 @@ async def register_user(
     # Build response token and user payload
     user_response = convert_user_db_to_response(created_user)
     # Create a real JWT access token for the newly registered user
+    # role.value is guaranteed lowercase by repository normalization and DB enum
     access_token = JWTAuth.create_access_token(
         data={
             "sub": str(created_user.user_id),

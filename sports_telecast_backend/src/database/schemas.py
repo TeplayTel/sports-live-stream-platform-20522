@@ -78,18 +78,22 @@ class ScheduleResponse(BaseResponse):
 def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
     """Convert a UserDB ORM object to a serializable response dict.
 
-    This function is defensive against:
-    - role being either an Enum or a plain string (handles both, normalized to lowercase)
-    - preferences being None (coerces to an empty dict to satisfy API schema)
-    - created_at/updated_at not yet hydrated from DB defaults (fallbacks provided)
+    Behavior:
+    - Normalizes role to a lowercase string ('user', 'admin', 'moderator') matching DB/OpenAPI.
+    - Coerces preferences None -> {} to satisfy API schema.
+    - Provides timestamp fallbacks if DB defaults aren't hydrated yet.
+
+    Returns a dict compliant with UserResponse schema.
     """
     # Normalize role to lowercase string value
     raw_role = getattr(user_db, "role", None)
     role_value = getattr(raw_role, "value", raw_role) if raw_role is not None else "user"
     if not isinstance(role_value, str):
-        # As a final fallback, stringify any unexpected type
         role_value = str(role_value)
-    role_value = role_value.lower() if isinstance(role_value, str) else "user"
+    role_value = (role_value or "user").lower()
+    if role_value not in {"user", "admin", "moderator"}:
+        # Final guard against invalid values
+        role_value = "user"
 
     # Ensure preferences is a dict for API response validation
     preferences_value = user_db.preferences or {}

@@ -49,28 +49,33 @@ class UserRepository(BaseRepository):
         Returns:
             UserDB: Created user record
         """
-        # Let SQLAlchemy/DB handle UUID default rather than passing a string
+        # Let SQLAlchemy/DB handle UUID default rather than passing a string.
+
         # Always assign lowercase role consistent with DB enum; default to "user".
         # Defensive normalization in case future callers pass role as str or None.
+        # Even though UserCreate currently doesn't expose "role", this is future-proof.
         role_value = UserRoleEnum.USER  # default to lowercase "user"
-        try:
-            # If user_data might ever include role in the future, normalize it
-            raw_role = getattr(user_data, "role", None)
-            if isinstance(raw_role, str) and raw_role.strip():
-                # normalize to enum via value (accepts 'USER', 'user', etc.)
+        raw_role = getattr(user_data, "role", None)
+
+        # Normalize any provided role into lowercase enum; fallback to USER on invalid.
+        if isinstance(raw_role, str) and raw_role.strip():
+            try:
                 role_value = UserRoleEnum(raw_role.strip().lower())
-            elif raw_role is not None:
-                # If already enum-like with .value, coerce
+            except Exception:
+                role_value = UserRoleEnum.USER
+        elif raw_role is not None:
+            try:
+                # If already enum-like with .value, coerce to our enum
                 role_value = UserRoleEnum(getattr(raw_role, "value", raw_role))
-        except Exception:
-            role_value = UserRoleEnum.USER
+            except Exception:
+                role_value = UserRoleEnum.USER
 
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
-            role=role_value,  # enum value resolves to "user" by default
+            role=role_value,  # enum persists and returns lowercase values (user/admin/moderator)
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )
@@ -78,6 +83,22 @@ class UserRepository(BaseRepository):
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
+
+        # Ensure in-memory role normalization (defensive; DB enum should already be normalized)
+        if hasattr(user, "role"):
+            try:
+                # Reassign to normalized enum if it somehow deviated
+                normalized = UserRoleEnum(getattr(user.role, "value", user.role).lower())
+                if user.role != normalized:
+                    user.role = normalized
+                    await self.session.commit()
+                    await self.session.refresh(user)
+            except Exception:
+                # If normalization fails, keep default USER to avoid commit errors
+                user.role = UserRoleEnum.USER
+                await self.session.commit()
+                await self.session.refresh(user)
+
         return user
     
     # PUBLIC_INTERFACE

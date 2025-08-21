@@ -84,7 +84,7 @@ class UserRepository(BaseRepository):
             "preferences": {},
             "password_hash_len": len(password_hash) if isinstance(password_hash, str) else None,
         }
-        print("Creating UserDB with data:", input_payload)
+        print("=======Creating UserDB with data:", input_payload)
 
         user = UserDB(
             email=user_data.email,

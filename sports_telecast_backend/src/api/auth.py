@@ -37,7 +37,7 @@ async def login_user(
             "sub": str(user.user_id),
             "email": user.email,
             "username": user.username,
-            "role": user.role.value,
+            "role": user.role.value.lower(),
         }
     )
     return TokenData(
@@ -119,7 +119,7 @@ async def register_user(
             "sub": str(created_user.user_id),
             "email": created_user.email,
             "username": created_user.username,
-            "role": created_user.role.value,
+            "role": created_user.role.value.lower(),
         }
     )
     return TokenData(

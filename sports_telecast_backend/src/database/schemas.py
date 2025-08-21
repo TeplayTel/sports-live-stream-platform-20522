@@ -110,7 +110,7 @@ def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
         "username": user_db.username,
         "full_name": user_db.full_name,
         "avatar_url": user_db.avatar_url,
-        "role": role_value,
+        "role": role_value,  # guaranteed lowercase: 'user'|'admin'|'moderator'
         "preferences": preferences_value,
         "is_active": user_db.is_active,
         "created_at": created_at_value,

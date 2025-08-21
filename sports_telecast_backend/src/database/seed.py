@@ -623,7 +623,7 @@ async def seed_users(session: AsyncSession, uuid_mappings: dict):
             "username": "admin",
             "password_hash": pwd_context.hash("admin123"),
             "full_name": "System Administrator",
-            "role": UserRoleEnum.ADMIN,
+            "role": UserRoleEnum.ADMIN,  # lowercase-backed enum -> stored as 'admin'
             "is_active": True,
             "avatar_url": "https://cdn.example.com/avatars/admin.jpg",
             "preferences": {
@@ -640,7 +640,7 @@ async def seed_users(session: AsyncSession, uuid_mappings: dict):
             "username": "johndoe",
             "password_hash": pwd_context.hash("password123"),
             "full_name": "John Doe",
-            "role": UserRoleEnum.USER,
+            "role": UserRoleEnum.USER,  # lowercase-backed enum -> stored as 'user'
             "is_active": True,
             "avatar_url": "https://cdn.example.com/avatars/john.jpg",
             "preferences": {
@@ -674,7 +674,7 @@ async def seed_users(session: AsyncSession, uuid_mappings: dict):
             "username": "mikeb",
             "password_hash": pwd_context.hash("mike123"),
             "full_name": "Mike Brown",
-            "role": UserRoleEnum.MODERATOR,
+            "role": UserRoleEnum.MODERATOR,  # lowercase-backed enum -> stored as 'moderator'
             "is_active": True,
             "avatar_url": "https://cdn.example.com/avatars/mike.jpg",
             "preferences": {

@@ -9,6 +9,23 @@ class UserRole(str, Enum):
     ADMIN = "admin"
     MODERATOR = "moderator"
 
+    @classmethod
+    def _missing_(cls, value):
+        """
+        Normalize arbitrary input into a valid lowercase user role.
+        Accepts uppercase/mixed-case strings or enum-like inputs and coerces
+        to the first matching lowercase enum value. Defaults to 'user'.
+        """
+        try:
+            if isinstance(value, str):
+                lower = value.lower()
+                for member in cls:
+                    if member.value == lower:
+                        return member
+        except Exception:
+            pass
+        return cls.USER
+
 class UserPreferences(BaseModel):
     """User preferences model"""
     favorite_teams: List[str] = Field(default_factory=list, description="List of favorite team IDs")

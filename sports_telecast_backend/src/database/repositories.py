@@ -35,7 +35,27 @@ class UserRepository(BaseRepository):
         named 'preferences'. This is provisioned by the DB container migrations
         (e.g., 013_add_users_preferences_column.sql) and not by backend Alembic.
         Ensure DB migrations are applied before using registration APIs.
+
+    Role normalization:
+        All roles are stored as lowercase values in the DB enum ('user','admin','moderator').
+        Any inbound value is coerced to a valid enum with lowercase value before persistence.
     """
+
+    def _normalize_role(self, value: Optional[str]) -> UserRoleEnum:
+        """
+        Coerce arbitrary role input to the proper UserRoleEnum with lowercase value.
+        Defaults to UserRoleEnum.USER if invalid or None.
+        """
+        if not value:
+            return UserRoleEnum.USER
+        try:
+            lower = str(value).lower()
+            for member in UserRoleEnum:
+                if member.value == lower:
+                    return member
+        except Exception:
+            pass
+        return UserRoleEnum.USER
     
     # PUBLIC_INTERFACE
     async def create_user(self, user_data: UserCreate, password_hash: str) -> UserDB:
@@ -49,14 +69,15 @@ class UserRepository(BaseRepository):
         Returns:
             UserDB: Created user record
         """
-        # Ensure role is set using the uppercase enum member to match DB enum (USER, ADMIN, MODERATOR)
-        # Even if the underlying value may be lowercase, the DB enum expects the member 'USER'.
+        # Normalize role to ensure lowercase-backed enum; default to USER for new registrations
+        normalized_role = self._normalize_role(getattr(user_data, "role", None))
+
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
-            role=UserRoleEnum.USER,  # Set explicit default role to USER
+            role=normalized_role,
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )

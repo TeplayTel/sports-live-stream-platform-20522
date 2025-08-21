@@ -27,7 +27,8 @@ class MatchStatusEnum(enum.Enum):
     POSTPONED = "postponed"
 
 class UserRoleEnum(enum.Enum):
-    """User role enumeration stored as lowercase strings to match DB enum userroleenum."""
+    """User role enumeration stored as lowercase strings to match DB enum userroleenum.
+    IMPORTANT: Values must remain lowercase to maintain compatibility with API and seeds."""
     USER = "user"      # lowercase values to match DB
     ADMIN = "admin" 
     MODERATOR = "moderator"

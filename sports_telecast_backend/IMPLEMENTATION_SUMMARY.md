@@ -1,16 +1,9 @@
-This project includes additional diagnostics to surface hidden Alembic rollback causes:
+# Implementation Summary
 
-- alembic/env.py enhanced:
-  - Extra try/except around run_migrations to log full tracebacks.
-  - Post-run integrity probe executes SELECT 1 and SET CONSTRAINTS ALL IMMEDIATE before Alembic updates version table.
-  - Clear BEGIN/END prints around Alembic transaction in do_run_migrations().
+- Migration resilience: Added/verified an idempotent and cross-dialect migration (007_expand_alembic_version_length) to widen `alembic_version.version_num` from `VARCHAR(32)` to `VARCHAR(64)` to avoid failures when revision IDs exceed 32 characters.
+- Alembic env pre-checks: `alembic/env.py` proactively widens the version column before Alembic writes/reads revision IDs and applies an in-memory truncation compatibility patch only when necessary (does not shorten real revision IDs in the DB).
+- Diagnostics: Additional logging and advisory lock usage were implemented to improve visibility and avoid concurrent migration issues.
 
 Operational tips:
-- To enable SQL echo for deeper visibility set ALEMBIC_SQL_ECHO=1 (or LOG_SQL=true) in environment.
-- Verify that the database role used by Alembic has SELECT/UPDATE permissions on alembic_version.
-- Ensure no triggers exist on alembic_version and check for deferred triggers on emoji_assets that might fail only at commit.
-- Compare the printed FINAL-PROBE txid_current in migration logs with PostgreSQL server logs for matching error entries at commit time.
-
-If rollbacks persist with no in-migration errors:
-- Temporarily set PostgreSQL server log_min_messages to INFO and log_statement='all' for the migration session (or enable pgaudit) to capture the exact failing statement.
-- Run: ALEMBIC_SQL_ECHO=1 LOG_SQL=1 to see SQL emitted by Alembic and SQLAlchemy.
+- If you still encounter errors about `alembic_version.version_num` width, run `alembic upgrade head` to apply migration `007_expand_alembic_version_length`.
+- Ensure the DB user has permissions to ALTER the `alembic_version` table.

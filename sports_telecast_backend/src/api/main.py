@@ -53,12 +53,27 @@ async def lifespan(app: FastAPI):
         # NOTE: We rely on Alembic for schema management. Direct create_all() table creation
         # has been removed to avoid conflicts with migrations and enum/type management.
         try:
-            from ..database import run_migrations
-            logger.info("🛠️ Running database migrations (alembic upgrade head)...")
-            await run_migrations()
-            logger.info("✅ Database migrations completed")
-        except Exception as me:
-            logger.error(f"❌ Database migrations failed: {me}")
+            # Gate migrations behind an opt-in flag to prevent startup termination/hangs.
+            run_migs = str(os.getenv("RUN_MIGRATIONS_ON_STARTUP", "")).strip().lower() in ("1", "true", "yes", "on", "y", "t")
+            if run_migs:
+                from ..database import run_migrations
+                logger.info("🛠️ Running database migrations (alembic upgrade head)...")
+                try:
+                    await run_migrations()
+                    logger.info("✅ Database migrations completed")
+                except RuntimeError as re:
+                    # Common cause: calling asyncio.run() within an already running event loop from Alembic env.
+                    logger.error(f"❌ Database migrations hit a runtime error (likely event loop conflict): {re}")
+                    logger.warning("ℹ️ Tip: Prefer running migrations externally: `alembic upgrade head`. "
+                                   "Or update the migration runner to be fully async without using asyncio.run().")
+                except Exception as me_inner:
+                    logger.error(f"❌ Database migrations failed: {me_inner}")
+            else:
+                logger.info("⏭️ Skipping database migrations on startup (set RUN_MIGRATIONS_ON_STARTUP=true to enable). "
+                            "Ensure you have run `alembic upgrade head` before starting the app.")
+        except Exception as mig_block_exc:
+            # Catch any unexpected errors in the migration gating block to avoid breaking startup.
+            logger.error(f"❌ Unexpected error during migration gating block: {mig_block_exc}")
 
         # Check database connection
         if await check_database_connection():
@@ -83,6 +98,7 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
+        logger.warning("ℹ️ The API will start, but database-dependent endpoints may fail until the DB is ready and migrations are applied.")
 
     yield
 

@@ -49,95 +49,20 @@ class UserRepository(BaseRepository):
         Returns:
             UserDB: Created user record
         """
-        # Let SQLAlchemy/DB handle UUID default rather than passing a string.
-
-        # Always assign lowercase role consistent with DB enum; default to "user".
-        # Defensive normalization in case future callers pass role as str or None.
-        # Even though UserCreate currently doesn't expose "role", this is future-proof.
-        role_value = UserRoleEnum.USER  # default to lowercase "user"
-        raw_role = getattr(user_data, "role", None)
-
-        # Normalize any provided role into lowercase enum; fallback to USER on invalid.
-        if isinstance(raw_role, str) and raw_role.strip():
-            try:
-                role_value = UserRoleEnum(raw_role.strip().lower())
-            except Exception:
-                role_value = UserRoleEnum.USER
-        elif raw_role is not None:
-            try:
-                # If already enum-like with .value, coerce to our enum
-                role_value = UserRoleEnum(getattr(raw_role, "value", raw_role))
-            except Exception:
-                role_value = UserRoleEnum.USER
-
-        # Final defensive normalization: ensure enum constructed from lowercase string
-        role_lower = getattr(role_value, "value", role_value)
-        if isinstance(role_lower, str):
-            role_lower = role_lower.strip().lower()
-        try:
-            role_value = UserRoleEnum(role_lower)
-        except Exception:
-            role_value = UserRoleEnum.USER
-
+        # Role must always be the default lowercase 'user'
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
-            role=role_value,  # enum persists and returns lowercase values (user/admin/moderator)
+            role=UserRoleEnum.USER,  # hardcoded to 'user'
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )
 
-        # Temporary verification before commit: ensure only lowercase hits the DB
-        # This block can be removed after confirming logs in CI.
-        role_before_commit = getattr(user, "role", None)
-        role_before_commit_str = getattr(role_before_commit, "value", role_before_commit)
-        if isinstance(role_before_commit_str, str):
-            role_before_commit_str = role_before_commit_str.strip()
-        # Normalize in-memory if somehow uppercase was set
-        if isinstance(role_before_commit_str, str) and role_before_commit_str != role_before_commit_str.lower():
-            # Log and fix before commit
-            try:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Normalizing user.role from %s to %s before commit",
-                    role_before_commit_str,
-                    role_before_commit_str.lower(),
-                )
-            except Exception:
-                # logging is best-effort; continue
-                pass
-            try:
-                user.role = UserRoleEnum(role_before_commit_str.lower())
-            except Exception:
-                user.role = UserRoleEnum.USER
-
-        # Assert lowercasing just before commit (temporary diagnostic)
-        _role_commit_val = getattr(user.role, "value", user.role)
-        if isinstance(_role_commit_val, str):
-            assert _role_commit_val in {"user", "admin", "moderator"} and _role_commit_val == _role_commit_val.lower(), \
-                f"User.role must be lowercase user/admin/moderator; got {_role_commit_val!r}"
-
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
-
-        # Ensure in-memory role normalization (defensive; DB enum should already be normalized)
-        if hasattr(user, "role"):
-            try:
-                # Reassign to normalized enum if it somehow deviated
-                normalized = UserRoleEnum(getattr(user.role, "value", user.role).lower())
-                if user.role != normalized:
-                    user.role = normalized
-                    await self.session.commit()
-                    await self.session.refresh(user)
-            except Exception:
-                # If normalization fails, keep default USER to avoid commit errors
-                user.role = UserRoleEnum.USER
-                await self.session.commit()
-                await self.session.refresh(user)
-
         return user
     
     # PUBLIC_INTERFACE

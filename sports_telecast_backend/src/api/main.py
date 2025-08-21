@@ -21,6 +21,7 @@ from .emoji import router as emoji_router
 from api.emoji_upload import router as emoji_upload_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
+from . import debug as debug_api
 
 # Import database components
 from ..database import (
@@ -262,6 +263,9 @@ app.include_router(emoji_router)
 app.include_router(emoji_upload_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
+
+# Development-only debug endpoints (do NOT enable in production)
+app.include_router(debug_api.router)
 
 tags_metadata = [
     {

@@ -50,12 +50,13 @@ class UserRepository(BaseRepository):
             UserDB: Created user record
         """
         # Let SQLAlchemy/DB handle UUID default rather than passing a string
+        # Always assign lowercase role consistent with DB enum; default to "user"
         user = UserDB(
             email=user_data.email,
             username=user_data.username,
             password_hash=password_hash,
             full_name=user_data.full_name,
-            role=UserRoleEnum.USER,
+            role=UserRoleEnum.USER,  # enum value is "user"
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )

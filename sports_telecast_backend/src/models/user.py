@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 
 class UserRole(str, Enum):
-    """User role enumeration"""
+    """User role enumeration (lowercase values to match DB and OpenAPI)"""
     USER = "user"
     ADMIN = "admin"
     MODERATOR = "moderator"

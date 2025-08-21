@@ -28,7 +28,14 @@ class BaseRepository:
         self.session = session
 
 class UserRepository(BaseRepository):
-    """Repository for user operations"""
+    """Repository for user operations
+
+    Note:
+        The backend expects the database 'users' table to include a JSON/JSONB column
+        named 'preferences'. This is provisioned by the DB container migrations
+        (e.g., 013_add_users_preferences_column.sql) and not by backend Alembic.
+        Ensure DB migrations are applied before using registration APIs.
+    """
     
     # PUBLIC_INTERFACE
     async def create_user(self, user_data: UserCreate, password_hash: str) -> UserDB:
@@ -50,7 +57,7 @@ class UserRepository(BaseRepository):
             full_name=user_data.full_name,
             role=UserRoleEnum.USER,
             is_active=True,
-            preferences={},
+            preferences={},  # requires users.preferences column (JSON/JSONB)
         )
 
         self.session.add(user)

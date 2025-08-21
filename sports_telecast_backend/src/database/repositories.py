@@ -81,7 +81,7 @@ class UserRepository(BaseRepository):
             is_active=True,
             preferences={},  # requires users.preferences column (JSON/JSONB)
         )
-
+        print("----=role", normalized_role)
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)

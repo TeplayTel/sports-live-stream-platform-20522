@@ -1,7 +1,7 @@
 """Ensure users table and constraints exist; prepare for JWT auth (robust idempotent)
 
-Revision ID: 006_users_table_jwt_prep
-Revises: 005_add_image_url_to_emoji_assets
+Revision ID: 007_users_table_jwt_prep
+Revises: 006_add_image_url_to_emoji_assets
 Create Date: 2025-08-20 10:00:00.000000
 
 This migration is designed to be safe to execute multiple times and in varied schema states.
@@ -17,15 +17,15 @@ from alembic import op, context
 from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
-revision = "006_users_table_jwt_prep"
-down_revision = "005_add_image_url_to_emoji_assets"
+revision = "007_users_table_jwt_prep"
+down_revision = "006_add_image_url_to_emoji_assets"
 branch_labels = None
 depends_on = None
 
 
 def _log(msg: str) -> None:
     """Diagnostic logger for this migration."""
-    print(f"[006_users_table] {msg}")
+    print(f"[007_users_table] {msg}")
 
 
 def _current_schema(bind) -> str:

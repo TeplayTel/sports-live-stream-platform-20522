@@ -1,7 +1,7 @@
 """Add image_url column to emoji_assets and backfill from file_location if possible (idempotent, no-op safe).
 
-Revision ID: 005_add_image_url_to_emoji_assets
-Revises: 004_create_emoji_assets
+Revision ID: 006_add_image_url_to_emoji_assets
+Revises: 005_create_emoji_assets
 Create Date: 2025-08-17 00:00:00.000000
 
 Goals:
@@ -24,15 +24,15 @@ from typing import Callable, Optional
 
 
 # revision identifiers, used by Alembic.
-revision = "005_add_image_url_to_emoji_assets"
-down_revision = "004_create_emoji_assets"
+revision = "006_add_image_url_to_emoji_assets"
+down_revision = "005_create_emoji_assets"
 branch_labels = None
 depends_on = None
 
 
 def _log(msg: str) -> None:
     """Lightweight diagnostic logger for this migration."""
-    print(f"[005_image_url_migration] {msg}")
+    print(f"[006_image_url_migration] {msg}")
 
 
 def _safe_repr(obj, max_len: int = 1200) -> str:

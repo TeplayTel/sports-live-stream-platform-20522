@@ -5,8 +5,8 @@ to prevent failures when revision IDs exceed 32 characters.
 
 It is written to be cross-database friendly (PostgreSQL, SQLite) and idempotent.
 
-Revision ID: 007_expand_alembic_version_length
-Revises: 006_users_table_jwt_prep
+Revision ID: 004_expand_alembic_version_length
+Revises: 003
 Create Date: 2025-08-20
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
-revision = "007_expand_alembic_version_length"
-down_revision = "006_users_table_jwt_prep"
+revision = "004_expand_alembic_version_length"
+down_revision = "003"
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """create emoji_assets table for emoji uploads (idempotent)
 
-Revision ID: 004_create_emoji_assets
-Revises: 003
+Revision ID: 005_create_emoji_assets
+Revises: 004_expand_alembic_version_length
 Create Date: 2024-06-25 09:00:00.000000
 
 This migration is designed to be robust and idempotent in any DB state:
@@ -13,7 +13,7 @@ This migration is designed to be robust and idempotent in any DB state:
 Notes:
 - Migration 001 in this project may already create a richer emoji_assets table. This migration will NO-OP or only
   add missing pieces when the table already exists.
-- Migration 003 runs before this revision and safely skips any operations if emoji_assets does not exist at that time.
+- Migration 004_expand_alembic_version_length runs before this revision and safely skips any operations if emoji_assets does not exist at that time.
 """
 
 from alembic import op
@@ -21,8 +21,8 @@ import sqlalchemy as sa
 from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
-revision = "004_create_emoji_assets"
-down_revision = "003"
+revision = "005_create_emoji_assets"
+down_revision = "004_expand_alembic_version_length"
 branch_labels = None
 depends_on = None
 

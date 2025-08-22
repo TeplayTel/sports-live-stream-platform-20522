@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..websocket.manager import manager
-from ..auth.jwt_auth import JWTAuth
+from ..auth.jwt_auth import verify_token
 from ..database import get_db
 from ..database.repositories import MatchRepository, EmojiRepository
 
@@ -37,8 +37,9 @@ async def websocket_endpoint(
     # Optional authentication
     if token:
         try:
-            payload = JWTAuth.verify_token(token)
-            user_id = payload.get("sub")
+            # verify_token returns a UserResponse or None; we only need user_id for personalization
+            user = await verify_token(token, db)
+            user_id = user.id if user else None
         except Exception as e:
             logger.warning(f"WebSocket authentication failed: {e}")
             # Continue without authentication

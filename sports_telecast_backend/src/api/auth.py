@@ -1,15 +1,74 @@
 from fastapi import APIRouter, HTTPException, status, Body, Request, Depends
 from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.user import UserLogin, UserResponse, TokenData, UserUpdate
+from ..models.register import RegisterRequest, MinimalUserResponse
 from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
-from sqlalchemy.ext.asyncio import AsyncSession
 from .utils import get_trusted_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# PUBLIC_INTERFACE
+@router.post(
+    "/register",
+    response_model=MinimalUserResponse,
+    summary="Register a new user",
+)
+async def register_user(
+    payload: RegisterRequest = Body(..., description="Registration payload"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Register a new user.
+
+    Validates that email and username are unique, securely hashes the password,
+    creates a new user (UUIDv4 as text), and returns minimal user info.
+
+    Parameters:
+    - payload.email: EmailStr - must be unique
+    - payload.username: str - must be unique
+    - payload.password: str - will be hashed and not returned
+
+    Returns:
+    - MinimalUserResponse: { id, email, username, created_at }
+    """
+    repo = UserRepository(db)
+
+    # Uniqueness checks
+    existing_by_email = await repo.get_user_by_email(payload.email)
+    if existing_by_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    existing_by_username = await repo.get_user_by_username(payload.username)
+    if existing_by_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+
+    # Securely hash the password
+    password_hash = pwd_context.hash(payload.password)
+
+    # Create user using minimal schema
+    from ..models.user import UserCreate  # reuse existing DTO, only minimal fields used
+    created = await repo.create_user(
+        user_data=UserCreate(email=payload.email, username=payload.username, password=payload.password),
+        password_hash=password_hash,
+    )
+
+    # Build minimal response
+    return MinimalUserResponse(
+        id=str(created.id),
+        email=created.email,
+        username=created.username,
+        created_at=created.created_at.isoformat() if getattr(created, "created_at", None) else ""
+    )
 
 # PUBLIC_INTERFACE
 @router.post("/login", response_model=TokenData, summary="User login")

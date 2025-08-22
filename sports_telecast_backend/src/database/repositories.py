@@ -32,12 +32,12 @@ class UserRepository(BaseRepository):
     # PUBLIC_INTERFACE
     async def create_user(self, user_data: UserCreate, password_hash: str) -> UserDB:
         """
-        Create a new user in the database
-        
+        Create a new user in the database using minimal schema (id, email, username, password_hash).
+
         Args:
-            user_data: User creation data
+            user_data: User creation data (email, username, password required)
             password_hash: Hashed password
-            
+
         Returns:
             UserDB: Created user record
         """
@@ -45,9 +45,9 @@ class UserRepository(BaseRepository):
             id=str(uuid.uuid4()),
             email=user_data.email,
             username=user_data.username,
-            password_hash=password_hash
+            password_hash=password_hash,
         )
-        
+
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status, Query, Request
+from fastapi import APIRouter, HTTPException, status, Query, Request, Depends
 from typing import Optional
-# from sqlalchemy.ext.asyncio import AsyncSession  # Removed unused import that could confuse response typing
+from sqlalchemy.ext.asyncio import AsyncSession
 # Use response models from database.schemas, as all conversions/proxying use these
 from ..database import get_db
 from ..database.repositories import HighlightRepository
@@ -16,7 +16,7 @@ async def get_highlights(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     match_id: Optional[str] = Query(None, description="Filter by match ID"),
     request: Request = None,
-    db_session = None  # No type annotation; do not treat as FastAPI dependency with response type
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Get paginated list of match highlights
@@ -24,19 +24,20 @@ async def get_highlights(
 
     Ensures only serializable structures are returned; ORM/session objects never returned.
     """
-    db_session = db_session or await get_db().__anext__()
     get_trusted_user(request)
     offset = (page - 1) * page_size
-    highlight_repo = HighlightRepository(db_session)
+    highlight_repo = HighlightRepository(db)
     highlights_db = await highlight_repo.get_highlights(
         limit=page_size,
         offset=offset,
         match_id=match_id
     )
     highlights = [convert_highlight_db_to_response(highlight) for highlight in highlights_db]
+
+    # For total, use a separate query or reuse repository; here we use a large limit as before
     all_highlights_db = await highlight_repo.get_highlights(limit=1000, offset=0, match_id=match_id)
     total = len(all_highlights_db)
-    # Ensures the returned value is a dict, suitable for JSON serialization
+
     # Convert highlights to minimal schema
     highlight_data = []
     for h in highlights:
@@ -48,7 +49,7 @@ async def get_highlights(
             "created_at": h.created_at
         }
         highlight_data.append(highlight_dict)
-    
+
     return {
         "highlights": highlight_data,
         "total": total,
@@ -61,7 +62,7 @@ async def get_highlights(
 async def get_highlight_details(
     highlight_id: str,
     request: Request = None,
-    db_session = None  # No type annotation
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Get detailed information about a specific highlight.
@@ -69,9 +70,8 @@ async def get_highlight_details(
 
     Always returns a serializable dict.
     """
-    db_session = db_session or await get_db().__anext__()
     get_trusted_user(request)
-    highlight_repo = HighlightRepository(db_session)
+    highlight_repo = HighlightRepository(db)
     highlight_db = await highlight_repo.get_highlight_by_id(highlight_id)
     if not highlight_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Highlight not found")
@@ -83,7 +83,7 @@ async def get_highlight_details(
 async def get_featured_highlights(
     limit: int = Query(10, ge=1, le=50, description="Number of highlights to return"),
     request: Request = None,
-    db_session = None
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Get latest featured highlights.
@@ -91,9 +91,8 @@ async def get_featured_highlights(
 
     Always returns a serializable dict.
     """
-    db_session = db_session or await get_db().__anext__()
     get_trusted_user(request)
-    highlight_repo = HighlightRepository(db_session)
+    highlight_repo = HighlightRepository(db)
     featured_highlights_db = await highlight_repo.get_featured_highlights(limit=limit)
     featured_highlights = [convert_highlight_db_to_response(highlight) for highlight in featured_highlights_db]
     return {

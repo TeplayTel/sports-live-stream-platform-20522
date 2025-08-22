@@ -8,9 +8,12 @@ from ..database.connection import get_db
 from ..database.repositories import UserRepository
 from ..database.schemas import convert_user_db_to_response
 from .utils import get_trusted_user
+import logging
+import types
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
 
 # PUBLIC_INTERFACE
 @router.post(
@@ -36,6 +39,15 @@ async def register_user(
     Returns:
     - MinimalUserResponse: { id, email, username, created_at }
     """
+    # Diagnostic checks to ensure FastAPI injected a real AsyncSession
+    logger.debug(f"[register_user] Received db object type={type(db)!r}")
+    print(f"[DEBUG] register_user: db type={type(db)} is_asyncsession={isinstance(db, AsyncSession)}")  # visible in logs/console
+    if isinstance(db, (types.AsyncGeneratorType, types.GeneratorType)):
+        # This indicates an incorrect use like passing get_db without Depends
+        raise HTTPException(status_code=500, detail="Internal error: database dependency yielded a generator, expected AsyncSession")
+    if not isinstance(db, AsyncSession):
+        raise HTTPException(status_code=500, detail=f"Internal error: expected AsyncSession, got {type(db)}")
+
     repo = UserRepository(db)
 
     # Uniqueness checks

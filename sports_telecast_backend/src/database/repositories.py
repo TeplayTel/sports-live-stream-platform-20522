@@ -25,7 +25,17 @@ class BaseRepository:
 
     def __init__(self, session: AsyncSession):
         # Ensure we are handed a real AsyncSession (not a context manager/generator)
+        import logging, types
+        logger = logging.getLogger(__name__)
+        logger.debug(f"[BaseRepository] Init with session type={type(session)!r} is_asyncsession={isinstance(session, AsyncSession)}")
+        if isinstance(session, (types.AsyncGeneratorType, types.GeneratorType)):
+            logger.error(f"[BaseRepository] Received generator instead of AsyncSession: {session}")
+            raise TypeError(
+                "BaseRepository expected an AsyncSession instance, but received a generator. "
+                "Make sure to use FastAPI dependency injection: db: AsyncSession = Depends(get_db)."
+            )
         if not isinstance(session, AsyncSession):
+            logger.error(f"[BaseRepository] Invalid session type: {type(session)!r}")
             raise TypeError(
                 "BaseRepository expected an AsyncSession instance. "
                 "Use FastAPI dependency injection: db: AsyncSession = Depends(get_db)."

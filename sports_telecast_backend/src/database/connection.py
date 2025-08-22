@@ -13,6 +13,10 @@ from sqlalchemy.ext.asyncio import (
 )
 from contextlib import asynccontextmanager
 import re
+import logging
+
+# Configure module-level logger
+logger = logging.getLogger(__name__)
 
 # PUBLIC_INTERFACE
 # Use environment variables for DB connection string in the following order:
@@ -106,15 +110,20 @@ async def get_db() -> AsyncSession:
       - Common pitfall: Do not pass `get_db()` itself or treat it as a generator.
         Always rely on FastAPI to inject the yielded AsyncSession.
     """
-    db: AsyncSession = AsyncSessionLocal()
+    db = AsyncSessionLocal()
     try:
         # Defensive check to catch incorrect session construction early.
-        if not isinstance(db, AsyncSession):
+        is_asyncsession = isinstance(db, AsyncSession)
+        logger.debug(f"[get_db] Created session type={type(db)!r} isinstance(AsyncSession)={is_asyncsession}")
+        if not is_asyncsession:
             # In case configuration changes break the session factory
-            raise RuntimeError("get_db did not create an AsyncSession instance.")
+            raise RuntimeError(f"get_db did not create an AsyncSession instance. Got: {type(db)}")
         yield db
     finally:
-        await db.close()
+        try:
+            await db.close()
+        except Exception as e:
+            logger.warning(f"[get_db] Error closing session {type(db)!r}: {e}")
 
 # PUBLIC_INTERFACE
 async def init_database():

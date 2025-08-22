@@ -61,7 +61,6 @@ async def get_highlight_details(
     get_trusted_user(request)
     highlight_repo = HighlightRepository(db_session)
     highlight_db = await highlight_repo.get_highlight_by_id(highlight_id)
->>>>>>> cga-cg908b179b
     if not highlight_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Highlight not found")
     highlight = convert_highlight_db_to_response(highlight_db)

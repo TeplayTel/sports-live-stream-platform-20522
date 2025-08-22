@@ -253,9 +253,8 @@ class MatchRepository(BaseRepository):
             .limit(limit)
         )
         return result.scalars().all()
-    
+
     # PUBLIC_INTERFACE
-<<<<<<< HEAD
     async def get_matches_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0, status: Optional[MatchStatus] = None) -> List[MatchDB]:
         """Get matches for a specific event"""
         query = select(MatchDB).options(
@@ -284,6 +283,169 @@ class MatchRepository(BaseRepository):
         
         result = await self.session.execute(query)
         return result.scalar() or 0
+
+    # PUBLIC_INTERFACE
+    async def get_more_matches(self, limit: int = 12, offset: int = 0, exclude_ids: List[str] = None) -> List[MatchDB]:
+        """Get additional matches for 'more matches' section with variety"""
+        if exclude_ids is None:
+            exclude_ids = []
+        
+        base_query = select(MatchDB).options(
+            selectinload(MatchDB.home_team),
+            selectinload(MatchDB.away_team),
+            selectinload(MatchDB.event)
+        )
+        
+        if exclude_ids:
+            base_query = base_query.where(~MatchDB.match_id.in_(exclude_ids))
+        
+        matches = []
+        
+        live_result = await self.session.execute(
+            base_query.where(MatchDB.status == MatchStatusEnum.LIVE)
+            .order_by(desc(MatchDB.start_time))
+            .limit(3)
+        )
+        matches.extend(live_result.scalars().all())
+        
+        recent_finished_result = await self.session.execute(
+            base_query.where(
+                and_(
+                    MatchDB.status == MatchStatusEnum.FINISHED,
+                    MatchDB.start_time >= datetime.utcnow() - timedelta(days=7)
+                )
+            )
+            .order_by(desc(MatchDB.start_time))
+            .limit(4)
+        )
+        matches.extend(recent_finished_result.scalars().all())
+        
+        upcoming_result = await self.session.execute(
+            base_query.where(
+                and_(
+                    MatchDB.status == MatchStatusEnum.SCHEDULED,
+                    MatchDB.start_time >= datetime.utcnow(),
+                    MatchDB.start_time <= datetime.utcnow() + timedelta(days=7)
+                )
+            )
+            .order_by(MatchDB.start_time)
+            .limit(4)
+        )
+        matches.extend(upcoming_result.scalars().all())
+        
+        if len(matches) < limit:
+            existing_ids = [m.match_id for m in matches] + exclude_ids
+            additional_result = await self.session.execute(
+                base_query.where(~MatchDB.match_id.in_(existing_ids))
+                .order_by(desc(MatchDB.start_time))
+                .limit(limit - len(matches))
+            )
+            matches.extend(additional_result.scalars().all())
+        
+        unique_matches = {}
+        for match in matches:
+            if match.match_id not in unique_matches:
+                unique_matches[match.match_id] = match
+        
+        final_matches = list(unique_matches.values())[offset:offset + limit]
+        return final_matches
+>>>>>>> cga-cg908b179b
+=======
+    # PUBLIC_INTERFACE
+    async def get_matches_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0, status: Optional[MatchStatus] = None) -> List[MatchDB]:
+        """Get matches for a specific event"""
+        query = select(MatchDB).options(
+            selectinload(MatchDB.home_team),
+            selectinload(MatchDB.away_team),
+            selectinload(MatchDB.event)
+        ).where(MatchDB.event_id == event_id)
+        
+        if status:
+            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
+            
+        query = query.order_by(desc(MatchDB.start_time)).offset(offset).limit(limit)
+        
+        result = await self.session.execute(query)
+        return result.scalars().all()
+    
+    # PUBLIC_INTERFACE
+    async def get_total_matches_count(self, status: Optional[MatchStatus] = None, sport: Optional[SportType] = None) -> int:
+        """Get total count of matches with optional filtering"""
+        query = select(func.count(MatchDB.match_id))
+        
+        if status:
+            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
+        if sport:
+            query = query.where(MatchDB.sport_type == SportTypeEnum(sport.value))
+        
+        result = await self.session.execute(query)
+        return result.scalar() or 0
+
+    # PUBLIC_INTERFACE
+    async def get_more_matches(self, limit: int = 12, offset: int = 0, exclude_ids: List[str] = None) -> List[MatchDB]:
+        """Get additional matches for 'more matches' section with variety"""
+        if exclude_ids is None:
+            exclude_ids = []
+        
+        base_query = select(MatchDB).options(
+            selectinload(MatchDB.home_team),
+            selectinload(MatchDB.away_team),
+            selectinload(MatchDB.event)
+        )
+        
+        if exclude_ids:
+            base_query = base_query.where(~MatchDB.match_id.in_(exclude_ids))
+        
+        matches = []
+        
+        live_result = await self.session.execute(
+            base_query.where(MatchDB.status == MatchStatusEnum.LIVE)
+            .order_by(desc(MatchDB.start_time))
+            .limit(3)
+        )
+        matches.extend(live_result.scalars().all())
+        
+        recent_finished_result = await self.session.execute(
+            base_query.where(
+                and_(
+                    MatchDB.status == MatchStatusEnum.FINISHED,
+                    MatchDB.start_time >= datetime.utcnow() - timedelta(days=7)
+                )
+            )
+            .order_by(desc(MatchDB.start_time))
+            .limit(4)
+        )
+        matches.extend(recent_finished_result.scalars().all())
+        
+        upcoming_result = await self.session.execute(
+            base_query.where(
+                and_(
+                    MatchDB.status == MatchStatusEnum.SCHEDULED,
+                    MatchDB.start_time >= datetime.utcnow(),
+                    MatchDB.start_time <= datetime.utcnow() + timedelta(days=7)
+                )
+            )
+            .order_by(MatchDB.start_time)
+            .limit(4)
+        )
+        matches.extend(upcoming_result.scalars().all())
+        
+        if len(matches) < limit:
+            existing_ids = [m.match_id for m in matches] + exclude_ids
+            additional_result = await self.session.execute(
+                base_query.where(~MatchDB.match_id.in_(existing_ids))
+                .order_by(desc(MatchDB.start_time))
+                .limit(limit - len(matches))
+            )
+            matches.extend(additional_result.scalars().all())
+        
+        unique_matches = {}
+        for match in matches:
+            if match.match_id not in unique_matches:
+                unique_matches[match.match_id] = match
+        
+        final_matches = list(unique_matches.values())[offset:offset + limit]
+        return final_matches
 =======
     async def get_more_matches(self, limit: int = 12, offset: int = 0, exclude_ids: List[str] = None) -> List[MatchDB]:
         """Get additional matches for 'more matches' section with variety"""

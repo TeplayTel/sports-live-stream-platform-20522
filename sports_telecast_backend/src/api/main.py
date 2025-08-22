@@ -6,13 +6,13 @@ except ImportError:
     # In production, .env auto-loading is optional
     pass
 
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import logging
-from contextlib import asynccontextmanager
 
-# Import routers
+# Routers
 from .auth import router as auth_router
 from .profiles import router as profiles_router
 from .emoji import router as emoji_router
@@ -20,18 +20,16 @@ from api.emoji_upload import router as emoji_upload_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
 
-# Import database components
+# Database utilities
 from ..database import (
-    init_database, 
-    close_database_connections, 
+    init_database,
+    close_database_connections,
     check_database_connection,
-    get_database_health
+    get_database_health,
 )
 
-# Import middleware
+# Middleware
 from ..middleware.api_logger import APILoggingMiddleware, set_api_logger
-
-# (get_trusted_user import removed — now only used via dependent modules)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,38 +37,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-<<<<<<< HEAD
-    """Handle application startup and shutdown"""
-    # Startup
-    try:
-        logger.info("🚀 Starting Sports Telecast API...")
-        
-        # Initialize database
-        init_database()
-        logger.info("✓ Database initialized")
-        
-        # Seed database if needed
-        try:
-            seed_database()
-            logger.info("✓ Database seeded")
-        except Exception as e:
-            logger.warning(f"⚠️  Database seeding warning (may already be seeded): {e}")
-        
-        logger.info("✅ API startup completed successfully")
-        
-    except Exception as e:
-        logger.error(f"❌ Startup error: {e}")
-        raise
-    
-    yield
-    
-    # Shutdown
-    logger.info("🛑 Shutting down Sports Telecast API...")
-=======
-    """Application lifespan events"""
+    """Application lifespan events for startup and shutdown."""
     logger.info("🚀 Sports Telecast Backend starting up...")
 
-    # Initialize database
     try:
         logger.info("🔗 Initializing database connection...")
         await init_database()
@@ -80,11 +49,10 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Database connection established successfully")
         else:
             logger.warning("⚠️ Database connection check failed")
-
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
-        # Graceful degradation
 
+    # Yield control to the application
     yield
 
     # Cleanup on shutdown
@@ -94,7 +62,6 @@ async def lifespan(app: FastAPI):
         logger.info("🔌 Database connections closed")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
->>>>>>> cga-cg908b179b
 
 # Create FastAPI app with cricket streaming-only metadata
 app = FastAPI(
@@ -102,34 +69,30 @@ app = FastAPI(
     description="""
     ## Sports Live Streaming Platform Backend
 
-    **Cricket-only backend** for event streaming, emoji reactions, highlights, and user authentication/profile.
+    Cricket-only backend for event streaming, emoji reactions, highlights, and user authentication/profile.
 
-    ### 🎯 Features
-    * **Live Stream & Match Data**: Real-time cricket match data and streaming event info
-    * **Emoji Reactions**: Interactive emoji reactions during live cricket matches
-    * **JWT Auth & Profiles**: User authentication and profile management
-    * **Match Highlights**: Video highlights and cricket key moments
-    * **WebSocket**: Real-time updates for cricket matches & engagement
+    Features
+    * Live Stream & Match Data: Real-time cricket match data and streaming event info
+    * Emoji Reactions: Interactive emoji reactions during live cricket matches
+    * JWT Auth & Profiles: User authentication and profile management
+    * Match Highlights: Video highlights and cricket key moments
+    * WebSocket: Real-time updates for cricket matches & engagement
     """,
     version="1.0.0",
-    contact={
-        "name": "Sports Telecast API Support",
-        "email": "support@sportstelecast.com",
-    },
-    license_info={
-        "name": "MIT License",
-        "url": "https://opensource.org/licenses/MIT",
-    },
-    lifespan=lifespan
+    contact={"name": "Sports Telecast API Support", "email": "support@sportstelecast.com"},
+    license_info={"name": "MIT License", "url": "https://opensource.org/licenses/MIT"},
+    lifespan=lifespan,
 )
 
+# Setup API logging middleware
 api_logger_middleware = APILoggingMiddleware(app)
 set_api_logger(api_logger_middleware)
 app.add_middleware(APILoggingMiddleware)
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, tighten this
+    allow_origins=["*"],  # In production, restrict origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -137,26 +100,22 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for unhandled errors"""
+    """Global exception handler for unhandled errors."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "Internal server error",
-            "message": "An unexpected error occurred"
-        }
+        content={"detail": "Internal server error", "message": "An unexpected error occurred"},
     )
 
 @app.get("/", tags=["Health"], summary="Health Check")
 async def health_check():
     """
-    Health check endpoint
+    Health check endpoint.
 
     Returns the API status and basic information.
     Use this endpoint to verify the API is running correctly.
     """
     db_health = await get_database_health()
-
     return {
         "message": "Sports Telecast Backend API is running! 🏟️🏏",
         "status": "healthy",
@@ -164,7 +123,7 @@ async def health_check():
         "database": db_health,
         "features": [
             "Live CRICKET match data and scores",
-            "Emoji reactions with real-time updates", 
+            "Emoji reactions with real-time updates",
             "WebSocket support for live connections",
             "JWT-based authentication",
             "Match highlights and cricket video content",
@@ -179,28 +138,23 @@ async def health_check():
             "chat": "/chat/*",
             "websocket": "/ws/{event_id}",
             "api_docs": "/docs",
-            "redoc_docs": "/redoc", 
-            "openapi_spec": "/openapi.json"
+            "redoc_docs": "/redoc",
+            "openapi_spec": "/openapi.json",
         },
-        "documentation": {
-            "swagger_ui": "/docs",
-            "redoc": "/redoc",
-            "openapi_json": "/openapi.json"
-        }
+        "documentation": {"swagger_ui": "/docs", "redoc": "/redoc", "openapi_json": "/openapi.json"},
     }
 
 @app.get("/health/database", tags=["Health"], summary="Database Health Check")
 async def database_health_check():
     """
-    Database health check endpoint
+    Database health check endpoint.
 
     Returns detailed database connection and health information.
     """
     db_health = await get_database_health()
-    return {
-        "database": db_health
-    }
+    return {"database": db_health}
 
+# Include routers
 app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(emoji_router)
@@ -208,34 +162,16 @@ app.include_router(emoji_upload_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
 
+# OpenAPI tags
 tags_metadata = [
-    {
-        "name": "Health",
-        "description": "Health check and API status endpoints"
-    },
-    {
-        "name": "Authentication", 
-        "description": "User authentication and JWT token management"
-    },
-    {
-        "name": "User Profiles",
-        "description": "User profiles with preferences and privacy settings"
-    },
-    {
-        "name": "Fan Engagement - Emojis",
-        "description": "Interactive emoji reactions for live cricket events"
-    },
-    {
-        "name": "Highlights",
-        "description": "Match highlights, cricket video content, and key moments"
-    },
-    {
-        "name": "WebSocket",
-        "description": "Real-time WebSocket connections for cricket live updates and emoji reactions"
-    }
+    {"name": "Health", "description": "Health check and API status endpoints"},
+    {"name": "Authentication", "description": "User authentication and JWT token management"},
+    {"name": "User Profiles", "description": "User profiles with preferences and privacy settings"},
+    {"name": "Fan Engagement - Emojis", "description": "Interactive emoji reactions for live cricket events"},
+    {"name": "Highlights", "description": "Match highlights, cricket video content, and key moments"},
+    {"name": "WebSocket", "description": "Real-time WebSocket connections for cricket live updates and emoji reactions"},
 ]
 app.openapi_tags = tags_metadata
->>>>>>> cga-cg908b179b
 
 if __name__ == "__main__":
     import uvicorn

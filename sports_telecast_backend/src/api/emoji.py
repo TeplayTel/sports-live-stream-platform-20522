@@ -5,7 +5,6 @@ from ..models.emoji import (
 )
 from ..database.repositories import EmojiRepository, MatchRepository, EventRepository
 from ..database.schemas import convert_emoji_db_to_pydantic
->>>>>>> cga-cg908b179b
 from ..websocket.manager import manager
 from .utils import get_trusted_user
 
@@ -36,7 +35,6 @@ async def list_emojis(
         page=pageNo,
         page_size=pageSize
     )
->>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
 @router.post("/userEmojiReaction", response_model=EmojiReactionResponse, summary="Submit emoji reaction")
@@ -87,7 +85,6 @@ async def create_emoji_reaction(
         reaction_id=reaction_id,
         message="Reaction recorded successfully"
     )
->>>>>>> cga-cg908b179b
 
 # PUBLIC_INTERFACE
 @router.get("/reactions/{event_id}", response_model=EmojiReactionSummary, summary="Get event reaction summary")
@@ -107,4 +104,3 @@ async def get_event_reactions(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     summary = await emoji_repo.get_reaction_summary(event_id)
     return summary
->>>>>>> cga-cg908b179b

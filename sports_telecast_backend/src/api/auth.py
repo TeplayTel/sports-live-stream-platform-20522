@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Body, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Body, Request, Depends, Header, Query
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -92,8 +92,8 @@ async def login_user(
     """
     User login with trusted userId/userData (no auth).
 
-    - **login_data**: UserLogin request with email and password.
-    - **returns**: TokenData (JWT access token + user info)
+    - login_data: UserLogin request with email and password.
+    - returns: TokenData (JWT access token + user info)
     """
     repo = UserRepository(db)
     user = await repo.get_user_by_email(login_data.email)
@@ -112,17 +112,53 @@ async def login_user(
     )
 
 # PUBLIC_INTERFACE
-@router.get("/me", response_model=UserResponse, summary="Get current user")
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get current user",
+)
 async def get_current_user_profile(
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    )
 ):
     """
-    Get the current trusted/mock user's profile (from headers/params/body).
+    Get the current trusted/mock user's profile.
 
-    - **returns**: UserResponse profile
+    This endpoint allows specifying the user in multiple ways for development and testing:
+    - X-User-Id header
+    - user_id query parameter
+    - If neither is provided, it will fallback to extracting from request using utility (headers/query/body).
+
+    Parameters:
+    - X-User-Id (header): Optional user identifier header.
+    - user_id (query): Optional user identifier query parameter.
+
+    Returns:
+    - UserResponse: The resolved user's profile.
+
+    Errors:
+    - 400: Missing user identifier.
+    - 404: User not found.
     """
-    user_id, _ = get_trusted_user(request)
+    # Prefer explicit parameters for clearer Swagger experience
+    user_id = x_user_id or user_id_q
+    if not user_id:
+        # Fallback to existing extraction logic
+        user_id, _ = get_trusted_user(request)
+
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user identifier. Provide X-User-Id header or user_id query param.")
+
     repo = UserRepository(db)
     user = await repo.get_user_by_id(user_id)
     if not user:
@@ -131,19 +167,52 @@ async def get_current_user_profile(
     return user_response
 
 # PUBLIC_INTERFACE
-@router.put("/me", response_model=UserResponse, summary="Update current user")
+@router.put(
+    "/me",
+    response_model=UserResponse,
+    summary="Update current user",
+)
 async def update_current_user_profile(
     user_update: UserUpdate = Body(...),
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    )
 ):
     """
     Update the trusted/mock user's profile.
 
-    - **user_update**: UserUpdate payload
-    - **returns**: UserResponse updated profile
+    You can provide the user via:
+    - X-User-Id (header)
+    - user_id (query)
+    If neither is provided, utility will attempt to read from request.
+
+    Parameters:
+    - user_update: UserUpdate payload with allowed fields.
+    - X-User-Id (header): Optional user identifier header.
+    - user_id (query): Optional user identifier query parameter.
+
+    Returns:
+    - UserResponse: Updated user profile.
+
+    Errors:
+    - 400: Missing user identifier.
+    - 404: User not found.
     """
-    user_id, _ = get_trusted_user(request)
+    user_id = x_user_id or user_id_q
+    if not user_id:
+        user_id, _ = get_trusted_user(request)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user identifier. Provide X-User-Id header or user_id query param.")
+
     repo = UserRepository(db)
     user = await repo.update_user(user_id, user_update)
     if not user:
@@ -152,17 +221,45 @@ async def update_current_user_profile(
     return user_response
 
 # PUBLIC_INTERFACE
-@router.post("/refresh", response_model=TokenData, summary="Refresh access token")
+@router.post(
+    "/refresh",
+    response_model=TokenData,
+    summary="Refresh access token",
+)
 async def refresh_access_token(
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    )
 ):
     """
     Refresh the access token (dummy for mock mode).
 
-    - **returns**: TokenData (JWT access token + user info)
+    You can provide the user via:
+    - X-User-Id (header)
+    - user_id (query)
+
+    Returns:
+    - TokenData (JWT access token + user info)
+
+    Errors:
+    - 400: Missing user identifier.
+    - 404: User not found.
     """
-    user_id, _ = get_trusted_user(request)
+    user_id = x_user_id or user_id_q
+    if not user_id:
+        user_id, _ = get_trusted_user(request)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user identifier. Provide X-User-Id header or user_id query param.")
+
     repo = UserRepository(db)
     user = await repo.get_user_by_id(user_id)
     if not user:

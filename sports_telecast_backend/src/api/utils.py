@@ -7,6 +7,9 @@ def get_trusted_user(request: Request):
     Extract a trusted user_id and user_data from request.
     Order of precedence: headers > query params > request body.
     Headers: X-User-Id (userId), X-User-Data (userData as JSON string)
+    Aliases supported by endpoints via FastAPI parameters:
+    - Header: X-User-Id
+    - Query: user_id
     """
     user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id") or None
     user_data = None

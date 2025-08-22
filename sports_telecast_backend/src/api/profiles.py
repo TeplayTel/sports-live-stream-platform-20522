@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Query, Body, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Body, Request, Depends, Header
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -65,13 +65,33 @@ async def create_user_profile(
 )
 async def get_my_profile(
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    )
 ):
     """
     Get the trusted/mock current user's own profile.
+
+    You can specify the target user via:
+    - X-User-Id (header)
+    - user_id (query)
+    If neither is provided, falls back to utility extraction.
+
     Returns a UserProfileResponse Pydantic model.
     """
-    user_id, _ = get_trusted_user(request)
+    user_id = x_user_id or user_id_q
+    if not user_id:
+        user_id, _ = get_trusted_user(request)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user identifier. Provide X-User-Id header or user_id query param.")
     result = await db.execute(
         select(UserProfileDB)
         .options(selectinload(UserProfileDB.user))
@@ -92,13 +112,32 @@ async def get_my_profile(
 async def update_my_profile(
     profile_update: UserProfileUpdate = Body(...),
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    )
 ):
     """
     Update the trusted/mock current user's profile.
+
+    You can provide the user via:
+    - X-User-Id (header)
+    - user_id (query)
+
     Returns a UserProfileResponse Pydantic model.
     """
-    user_id, _ = get_trusted_user(request)
+    user_id = x_user_id or user_id_q
+    if not user_id:
+        user_id, _ = get_trusted_user(request)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user identifier. Provide X-User-Id header or user_id query param.")
     result = await db.execute(
         select(UserProfileDB).where(UserProfileDB.user_id == user_id)
     )
@@ -193,13 +232,32 @@ async def search_profiles(
 )
 async def delete_my_profile(
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    )
 ):
     """
     Delete the trusted/mock current user's profile.
+
+    You can provide the user via:
+    - X-User-Id (header)
+    - user_id (query)
+
     Returns a confirmation message.
     """
-    user_id, _ = get_trusted_user(request)
+    user_id = x_user_id or user_id_q
+    if not user_id:
+        user_id, _ = get_trusted_user(request)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user identifier. Provide X-User-Id header or user_id query param.")
     result = await db.execute(
         select(UserProfileDB).where(UserProfileDB.user_id == user_id)
     )

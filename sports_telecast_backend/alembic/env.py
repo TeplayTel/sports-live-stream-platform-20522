@@ -1,5 +1,4 @@
 import asyncio
-import os
 from logging.config import fileConfig
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -7,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
 # Import your models
-from src.database.connection import Base
+from src.database.connection import Base, get_database_url
 # Import all models to ensure they are registered with SQLAlchemy
 from src.database.models import (  # noqa: F401 - Import needed for Alembic model discovery
     UserDB, TeamDB, EventDB, MatchDB, MatchEventDB, 
@@ -27,20 +26,16 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
-
 def get_url():
     """Get database URL from environment variables"""
-    DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-    DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-    DB_NAME = os.getenv("POSTGRES_DB", "sports_telecast")
-    DB_USER = os.getenv("POSTGRES_USER", "postgres")
-    DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
+    url, db_type = get_database_url()
     
-    return f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    # Skip migrations for SQLite - we use direct table creation instead
+    if db_type == "sqlite":
+        print("SQLite detected - migrations skipped, use direct table creation instead")
+        return None
+        
+    return url
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -52,9 +47,11 @@ def run_migrations_offline() -> None:
 
     Calls to context.execute() here emit the given string to the
     script output.
-
     """
     url = get_url()
+    if url is None:  # SQLite case
+        return
+        
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -65,21 +62,22 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
-
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
         context.run_migrations()
 
-
 async def run_async_migrations() -> None:
     """In this scenario we need to create an Engine
     and associate a connection with the context.
-
     """
+    url = get_url()
+    if url is None:  # SQLite case
+        return
+        
     connectable = create_async_engine(
-        get_url(),
+        url,
         poolclass=pool.NullPool,
     )
 
@@ -88,11 +86,13 @@ async def run_async_migrations() -> None:
 
     await connectable.dispose()
 
-
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
+    url = get_url()
+    if url is None:  # SQLite case
+        return
+        
     asyncio.run(run_async_migrations())
-
 
 if context.is_offline_mode():
     run_migrations_offline()

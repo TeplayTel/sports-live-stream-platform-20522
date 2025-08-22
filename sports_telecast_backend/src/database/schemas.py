@@ -74,17 +74,16 @@ class ScheduleResponse(BaseResponse):
 # Conversion functions
 def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
     """Convert UserDB to response dict"""
+    # Map fields from the SQLAlchemy UserDB model to API response keys.
+    # The UserDB model defines the primary key as `id`, not `user_id`.
+    # Ensure response uses expected keys. Here we maintain "user_id" in response only
+    # if the API expects that; otherwise, use "id". Based on UserResponse in src/models/response.py,
+    # the API expects "id", "email", "username", "created_at".
     return {
-        "user_id": str(user_db.user_id),
+        "id": str(user_db.id),
         "email": user_db.email,
         "username": user_db.username,
-        "full_name": user_db.full_name,
-        "avatar_url": user_db.avatar_url,
-        "role": user_db.role.value,
-        "preferences": user_db.preferences,
-        "is_active": user_db.is_active,
         "created_at": user_db.created_at,
-        "updated_at": user_db.updated_at
     }
 
 def convert_team_db_to_response(team_db: TeamDB) -> TeamResponse:

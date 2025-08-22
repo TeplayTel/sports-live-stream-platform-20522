@@ -23,17 +23,38 @@ router = APIRouter(prefix="/profiles", tags=["User Profiles"])
     response_description="The created user profile."
 )
 async def create_user_profile(
-    profile_data: UserProfileCreate = Body(...),
+    profile_data: UserProfileCreate = Body(..., description="Payload for creating a user profile"),
     request: Request = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_user_id: str | None = Header(
+        default=None,
+        alias="X-User-Id",
+        description="Trusted user ID provided by a proxy/frontend. If provided, takes precedence over query/body."
+    ),
+    user_id_q: str | None = Query(
+        default=None,
+        alias="user_id",
+        description="User ID as query parameter for testing via Swagger UI when header injection is not possible."
+    ),
 ):
     """
     Create a new user profile.
-    Accepts userId from headers, params, or body ("mock login").
+
+    You can specify the user via:
+    - X-User-Id (header)
+    - user_id (query)
+    - body.user_id (in the profile_data payload)
+
+    If multiple are provided, the priority is: header > query > body.
     Returns a UserProfileResponse Pydantic model.
     """
-    user_id, _ = get_trusted_user(request)
-    # If not present in body, inject
+    # Resolve user_id using explicit parameters first for clearer Swagger experience
+    user_id = x_user_id or user_id_q or None
+    if not user_id:
+        # Fallback to utility extraction from headers/query/body if not provided explicitly
+        user_id, _ = get_trusted_user(request)
+
+    # If not present in body, inject resolved user_id
     pdict = profile_data.dict()
     if not pdict.get("user_id"):
         pdict["user_id"] = user_id

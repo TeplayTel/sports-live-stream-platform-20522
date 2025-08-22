@@ -8,7 +8,7 @@ from ..models.profile import (
     UserProfileCreate, UserProfileUpdate, UserProfileResponse
 )
 from ..database.connection import get_db
-from ..database.models import UserProfileDB, UserDB, ProfileVisibilityEnum
+from ..database.models import UserProfileDB, UserDB
 from datetime import datetime
 import uuid
 from .utils import get_trusted_user
@@ -43,10 +43,12 @@ async def create_user_profile(
     )
     if existing_profile.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User profile already exists")
+    # Ensure required fields for minimal schema
+    display_name = pdict.get("display_name") or "User"
     profile = UserProfileDB(
         profile_id=str(uuid.uuid4()),
         user_id=pdict["user_id"],
-        display_name=pdict.get("display_name"),
+        display_name=display_name,
         avatar_url=pdict.get("avatar_url")
     )
     db.add(profile)
@@ -137,9 +139,7 @@ async def get_profile_by_id(
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-    # PRIVATE profiles only viewable by owner
-    if profile.profile_visibility == ProfileVisibilityEnum.PRIVATE and user_id != profile.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Profile is private")
+    # Note: Minimal schema does not include visibility; return profile directly
     return _convert_profile_to_response(profile, is_own_profile=(user_id == profile.user_id))
 
 # PUBLIC_INTERFACE
@@ -165,12 +165,7 @@ async def search_profiles(
     """
     user_id, _ = get_trusted_user(request)
     query = select(UserProfileDB).options(selectinload(UserProfileDB.user))
-    # Only show public profiles to non-authenticated users
-    from ..database.models import ProfileVisibilityEnum
-    if not user_id:
-        query = query.where(UserProfileDB.profile_visibility == ProfileVisibilityEnum.PUBLIC)
-    else:
-        query = query.where(UserProfileDB.profile_visibility.in_([ProfileVisibilityEnum.PUBLIC, ProfileVisibilityEnum.FRIENDS]))
+    # Minimal schema: no visibility field, so no visibility-based filtering
     if q:
         query = query.join(UserDB).where(
             UserDB.username.ilike(f"%{q}%") | 

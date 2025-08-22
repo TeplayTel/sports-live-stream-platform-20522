@@ -48,7 +48,7 @@ def get_database_url():
 DATABASE_URL, DB_TYPE = get_database_url()
 
 # Configure database URLs for sync and async operations
-if DB_TYPE == "postgresql":
+if DB_TYPE == "postgresqlmmm":
     if DATABASE_URL.startswith("postgresql://"):
         ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     elif DATABASE_URL.startswith("postgresql+asyncpg://"):

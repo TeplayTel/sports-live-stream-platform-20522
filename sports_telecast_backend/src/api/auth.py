@@ -99,18 +99,16 @@ async def login_user(
     user = await repo.get_user_by_email(login_data.email)
     if not user or not pwd_context.verify(login_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    # Only include fields from minimal schema
-    user_response = {
-        "id": str(user.id),
-        "email": user.email,
-        "username": user.username,
-        "created_at": user.created_at
-    }
+
+    # Build a proper UserResponse Pydantic model (not a raw dict)
+    user_dict = convert_user_db_to_response(user)  # returns a dict with keys matching UserResponse
+    user_model = UserResponse(**user_dict)
+
     return TokenData(
         access_token="mock_token",
         token_type="bearer",
         expires_in=86400,
-        user=user_response
+        user=user_model
     )
 
 # PUBLIC_INTERFACE
@@ -169,10 +167,11 @@ async def refresh_access_token(
     user = await repo.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    user_response = convert_user_db_to_response(user)
+    user_dict = convert_user_db_to_response(user)
+    user_model = UserResponse(**user_dict)
     return TokenData(
         access_token="mock_token",
         token_type="bearer",
         expires_in=86400,
-        user=user_response
+        user=user_model
     )

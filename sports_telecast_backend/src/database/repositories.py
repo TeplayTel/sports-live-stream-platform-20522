@@ -5,7 +5,7 @@ This module provides repository classes that encapsulate database operations
 and provide a clean interface for business logic layers.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc
 from sqlalchemy.orm import selectinload
@@ -14,12 +14,11 @@ import uuid
 
 from .models import (
     UserDB, EventDB, MatchDB, 
-    EmojiAssetDB, UserEmojiReactionDB, HighlightDB, UserProfileDB,
-    SportTypeEnum, MatchStatusEnum, UserRoleEnum, ProfileVisibilityEnum
+    HighlightDB, UserProfileDB
 )
 from ..models.user import UserCreate, UserUpdate
 from ..models.profile import UserProfileCreate, UserProfileUpdate
-from ..models.match import SportType, MatchStatus
+from ..models.match import MatchStatus
 
 class BaseRepository:
     """Base repository with common database operations"""
@@ -43,14 +42,10 @@ class UserRepository(BaseRepository):
             UserDB: Created user record
         """
         user = UserDB(
-            user_id=str(uuid.uuid4()),
+            id=str(uuid.uuid4()),
             email=user_data.email,
             username=user_data.username,
-            password_hash=password_hash,
-            full_name=user_data.full_name,
-            role=UserRoleEnum.USER,
-            is_active=True,
-            preferences={}
+            password_hash=password_hash
         )
         
         self.session.add(user)
@@ -62,7 +57,7 @@ class UserRepository(BaseRepository):
     async def get_user_by_id(self, user_id: str) -> Optional[UserDB]:
         """Get user by ID"""
         result = await self.session.execute(
-            select(UserDB).where(UserDB.user_id == user_id)
+            select(UserDB).where(UserDB.id == user_id)
         )
         return result.scalar_one_or_none()
     
@@ -91,15 +86,7 @@ class UserRepository(BaseRepository):
             
         if user_data.username is not None:
             user.username = user_data.username
-        if user_data.full_name is not None:
-            user.full_name = user_data.full_name
-        if user_data.avatar_url is not None:
-            user.avatar_url = user_data.avatar_url
-        if user_data.preferences is not None:
-            user.preferences = user_data.preferences.dict() if user_data.preferences else {}
             
-        user.updated_at = datetime.utcnow()
-        
         await self.session.commit()
         await self.session.refresh(user)
         return user
@@ -122,14 +109,7 @@ class UserProfileRepository(BaseRepository):
             profile_id=str(uuid.uuid4()),
             user_id=profile_data.user_id,
             display_name=profile_data.display_name,
-            bio=profile_data.bio,
-            location=profile_data.location,
-            website=str(profile_data.website) if profile_data.website else None,
-            favorite_teams=profile_data.favorite_teams,
-            favorite_sports=profile_data.favorite_sports,
-            profile_visibility=ProfileVisibilityEnum.PUBLIC,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            avatar_url=profile_data.avatar_url
         )
         
         self.session.add(profile)
@@ -160,16 +140,11 @@ class UserProfileRepository(BaseRepository):
         if not profile:
             return None
             
-        # Update fields that are not None
-        for field_name, value in profile_data.dict(exclude_unset=True).items():
-            if value is not None:
-                if field_name in ['website', 'avatar_url', 'cover_image_url'] and value:
-                    setattr(profile, field_name, str(value))
-                else:
-                    setattr(profile, field_name, value)
-                    
-        profile.updated_at = datetime.utcnow()
-        
+        if profile_data.display_name is not None:
+            profile.display_name = profile_data.display_name
+        if profile_data.avatar_url is not None:
+            profile.avatar_url = profile_data.avatar_url
+            
         await self.session.commit()
         await self.session.refresh(profile)
         return profile
@@ -181,8 +156,7 @@ class MatchRepository(BaseRepository):
     async def get_matches(self, 
                          limit: int = 20, 
                          offset: int = 0,
-                         status: Optional[MatchStatus] = None,
-                         sport: Optional[SportType] = None) -> List[MatchDB]:
+                         status: Optional[MatchStatus] = None) -> List[MatchDB]:
         """Get paginated list of matches with optional filtering"""
         query = select(MatchDB).options(
             selectinload(MatchDB.home_team),
@@ -191,9 +165,7 @@ class MatchRepository(BaseRepository):
         )
         
         if status:
-            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
-        if sport:
-            query = query.where(MatchDB.sport_type == SportTypeEnum(sport.value))
+            query = query.where(MatchDB.status == status.value)
             
         query = query.order_by(desc(MatchDB.start_time)).offset(offset).limit(limit)
         
@@ -208,8 +180,7 @@ class MatchRepository(BaseRepository):
             .options(
                 selectinload(MatchDB.home_team),
                 selectinload(MatchDB.away_team),
-                selectinload(MatchDB.event),
-                selectinload(MatchDB.match_events)
+                selectinload(MatchDB.event)
             )
             .where(MatchDB.match_id == match_id)
         )
@@ -225,7 +196,7 @@ class MatchRepository(BaseRepository):
                 selectinload(MatchDB.away_team),
                 selectinload(MatchDB.event)
             )
-            .where(MatchDB.status == MatchStatusEnum.LIVE)
+            .where(MatchDB.status == "live")
         )
         return result.scalars().all()
     
@@ -243,7 +214,7 @@ class MatchRepository(BaseRepository):
             )
             .where(
                 and_(
-                    MatchDB.status == MatchStatusEnum.SCHEDULED,
+                    MatchDB.status == "scheduled",
                     MatchDB.start_time >= datetime.utcnow(),
                     MatchDB.start_time <= end_date
                 )
@@ -255,16 +226,13 @@ class MatchRepository(BaseRepository):
         return result.scalars().all()
 
     # PUBLIC_INTERFACE
-    async def get_matches_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0, status: Optional[MatchStatus] = None) -> List[MatchDB]:
+    async def get_matches_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0) -> List[MatchDB]:
         """Get matches for a specific event"""
         query = select(MatchDB).options(
             selectinload(MatchDB.home_team),
             selectinload(MatchDB.away_team),
             selectinload(MatchDB.event)
         ).where(MatchDB.event_id == event_id)
-        
-        if status:
-            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
             
         query = query.order_by(desc(MatchDB.start_time)).offset(offset).limit(limit)
         
@@ -272,90 +240,15 @@ class MatchRepository(BaseRepository):
         return result.scalars().all()
     
     # PUBLIC_INTERFACE
-    async def get_total_matches_count(self, status: Optional[MatchStatus] = None, sport: Optional[SportType] = None) -> int:
+    async def get_total_matches_count(self, status: Optional[MatchStatus] = None) -> int:
         """Get total count of matches with optional filtering"""
         query = select(func.count(MatchDB.match_id))
         
         if status:
-            query = query.where(MatchDB.status == MatchStatusEnum(status.value))
-        if sport:
-            query = query.where(MatchDB.sport_type == SportTypeEnum(sport.value))
+            query = query.where(MatchDB.status == status.value)
         
         result = await self.session.execute(query)
         return result.scalar() or 0
-
-    # PUBLIC_INTERFACE
-    async def get_more_matches(self, limit: int = 12, offset: int = 0, exclude_ids: List[str] = None) -> List[MatchDB]:
-        """Get additional matches for 'more matches' section with variety"""
-        if exclude_ids is None:
-            exclude_ids = []
-        
-        # Build base query with exclusions
-        base_query = select(MatchDB).options(
-            selectinload(MatchDB.home_team),
-            selectinload(MatchDB.away_team),
-            selectinload(MatchDB.event)
-        )
-        
-        if exclude_ids:
-            base_query = base_query.where(~MatchDB.match_id.in_(exclude_ids))
-        
-        # Get a mix of different match types
-        matches = []
-        
-        # 1. Live matches (highest priority)
-        live_result = await self.session.execute(
-            base_query.where(MatchDB.status == MatchStatusEnum.LIVE)
-            .order_by(desc(MatchDB.start_time))
-            .limit(3)
-        )
-        matches.extend(live_result.scalars().all())
-        
-        # 2. Recent finished matches (within last 7 days)
-        recent_finished_result = await self.session.execute(
-            base_query.where(
-                and_(
-                    MatchDB.status == MatchStatusEnum.FINISHED,
-                    MatchDB.start_time >= datetime.utcnow() - timedelta(days=7)
-                )
-            )
-            .order_by(desc(MatchDB.start_time))
-            .limit(4)
-        )
-        matches.extend(recent_finished_result.scalars().all())
-        
-        # 3. Upcoming matches (next 7 days)
-        upcoming_result = await self.session.execute(
-            base_query.where(
-                and_(
-                    MatchDB.status == MatchStatusEnum.SCHEDULED,
-                    MatchDB.start_time >= datetime.utcnow(),
-                    MatchDB.start_time <= datetime.utcnow() + timedelta(days=7)
-                )
-            )
-            .order_by(MatchDB.start_time)
-            .limit(4)
-        )
-        matches.extend(upcoming_result.scalars().all())
-        
-        # 4. Fill remaining spots with any other matches
-        if len(matches) < limit:
-            existing_ids = [m.match_id for m in matches] + exclude_ids
-            additional_result = await self.session.execute(
-                base_query.where(~MatchDB.match_id.in_(existing_ids))
-                .order_by(desc(MatchDB.start_time))
-                .limit(limit - len(matches))
-            )
-            matches.extend(additional_result.scalars().all())
-        
-        # Remove duplicates and apply pagination
-        unique_matches = {}
-        for match in matches:
-            if match.match_id not in unique_matches:
-                unique_matches[match.match_id] = match
-        
-        final_matches = list(unique_matches.values())[offset:offset + limit]
-        return final_matches
 
 class EventRepository(BaseRepository):
     """Repository for event operations"""
@@ -364,15 +257,12 @@ class EventRepository(BaseRepository):
     async def get_events(self, 
                         limit: int = 20, 
                         offset: int = 0,
-                        sport: Optional[SportType] = None,
-                        featured: Optional[bool] = None) -> List[EventDB]:
+                        sport_type: Optional[str] = None) -> List[EventDB]:
         """Get paginated list of events with optional filtering"""
         query = select(EventDB)
         
-        if sport:
-            query = query.where(EventDB.sport_type == SportTypeEnum(sport.value))
-        if featured is not None:
-            query = query.where(EventDB.is_featured == featured)
+        if sport_type:
+            query = query.where(EventDB.sport_type == sport_type)
             
         query = query.order_by(desc(EventDB.start_date)).offset(offset).limit(limit)
         
@@ -388,96 +278,6 @@ class EventRepository(BaseRepository):
             .where(EventDB.event_id == event_id)
         )
         return result.scalar_one_or_none()
-
-class EmojiRepository(BaseRepository):
-    """Repository for emoji operations"""
-    
-    # PUBLIC_INTERFACE
-    async def get_emojis(self, limit: int = 10, offset: int = 0) -> List[EmojiAssetDB]:
-        """Get paginated list of active emojis"""
-        result = await self.session.execute(
-            select(EmojiAssetDB)
-            .where(EmojiAssetDB.is_active == True)
-            .order_by(EmojiAssetDB.sort_order)
-            .offset(offset)
-            .limit(limit)
-        )
-        return result.scalars().all()
-    
-    # PUBLIC_INTERFACE
-    async def get_emoji_by_id(self, emoji_id: str) -> Optional[EmojiAssetDB]:
-        """Get emoji by ID"""
-        result = await self.session.execute(
-            select(EmojiAssetDB).where(EmojiAssetDB.emoji_id == emoji_id)
-        )
-        return result.scalar_one_or_none()
-    
-    # PUBLIC_INTERFACE
-    async def add_reaction(self, user_id: str, event_id: str, emoji_id: str) -> str:
-        """Add emoji reaction"""
-        reaction_id = str(uuid.uuid4())
-        reaction = UserEmojiReactionDB(
-            reaction_id=reaction_id,
-            user_id=user_id,
-            event_id=event_id,
-            emoji_id=emoji_id
-        )
-        
-        self.session.add(reaction)
-        await self.session.commit()
-        return reaction_id
-    
-    # PUBLIC_INTERFACE
-    async def get_reaction_summary(self, event_id: str) -> Dict[str, Any]:
-        """Get emoji reaction summary for an event"""
-        # Get reaction counts
-        result = await self.session.execute(
-            select(
-                UserEmojiReactionDB.emoji_id,
-                func.count(UserEmojiReactionDB.reaction_id).label('count')
-            )
-            .where(UserEmojiReactionDB.event_id == event_id)
-            .group_by(UserEmojiReactionDB.emoji_id)
-        )
-        
-        emoji_counts = {}
-        total_reactions = 0
-        
-        for row in result:
-            emoji_counts[row.emoji_id] = row.count
-            total_reactions += row.count
-        
-        # Get top emojis with details
-        top_emojis = []
-        if emoji_counts:
-            emoji_ids = list(emoji_counts.keys())
-            emoji_result = await self.session.execute(
-                select(EmojiAssetDB)
-                .where(EmojiAssetDB.emoji_id.in_(emoji_ids))
-            )
-            
-            emojis = {emoji.emoji_id: emoji for emoji in emoji_result.scalars().all()}
-            
-            # Sort by count and get top 5
-            sorted_counts = sorted(emoji_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-            
-            for emoji_id, count in sorted_counts:
-                if emoji_id in emojis:
-                    emoji = emojis[emoji_id]
-                    top_emojis.append({
-                        "emoji_id": emoji_id,
-                        "emoji_type": emoji.emoji_type.value,
-                        "count": count,
-                        "image_url": emoji.image_url
-                    })
-        
-        return {
-            "event_id": event_id,
-            "emoji_counts": emoji_counts,
-            "total_reactions": total_reactions,
-            "top_emojis": top_emojis,
-            "last_updated": datetime.utcnow()
-        }
 
 class HighlightRepository(BaseRepository):
     """Repository for highlight operations"""
@@ -507,14 +307,3 @@ class HighlightRepository(BaseRepository):
             .where(HighlightDB.highlight_id == highlight_id)
         )
         return result.scalar_one_or_none()
-    
-    # PUBLIC_INTERFACE
-    async def get_featured_highlights(self, limit: int = 10) -> List[HighlightDB]:
-        """Get featured highlights (most recent and popular)"""
-        result = await self.session.execute(
-            select(HighlightDB)
-            .options(selectinload(HighlightDB.match))
-            .order_by(desc(HighlightDB.view_count), desc(HighlightDB.created_at))
-            .limit(limit)
-        )
-        return result.scalars().all()

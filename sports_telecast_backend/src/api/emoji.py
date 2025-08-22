@@ -8,7 +8,7 @@ from ..models.emoji import (
 )
 from ..database.repositories import MatchRepository, EventRepository
 from ..database.schemas import convert_emoji_db_to_pydantic
-from ..database.connection import get_session
+from ..database.connection import get_db
 from ..database.models import EmojiAssetDB, UserEmojiReactionDB
 from ..websocket.manager import manager
 from .utils import get_trusted_user
@@ -21,7 +21,7 @@ async def list_emojis(
     pageNo: int = Query(1, ge=1, description="Page number"),
     pageSize: int = Query(10, ge=1, le=100, description="Page size"),
     request: Request = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Get paginated list of available emojis for reactions.
@@ -58,7 +58,7 @@ async def list_emojis(
 async def create_emoji_reaction(
     reaction_request: EmojiReactionRequest = Body(...),
     request: Request = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Submit an emoji reaction for a live event.
@@ -128,7 +128,7 @@ async def create_emoji_reaction(
 async def get_event_reactions(
     event_id: str,
     request: Request = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Get emoji reaction summary for a specific event.

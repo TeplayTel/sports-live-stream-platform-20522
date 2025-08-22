@@ -1,14 +1,16 @@
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+import os
+
 import jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
-import os
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database.session import get_db
-from ..database.service import DatabaseService
+# Use the available connection dependency instead of the missing session module
+from ..database.connection import get_db
+from ..database.repositories import UserRepository
 from ..models.user import UserResponse
 
 # Password hashing
@@ -21,55 +23,62 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440
 
 security = HTTPBearer()
 
+# PUBLIC_INTERFACE
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
+    """Verify a password against its hash."""
     return pwd_context.verify(plain_password, hashed_password)
 
+# PUBLIC_INTERFACE
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
+    """Hash a password."""
     return pwd_context.hash(password)
 
+# PUBLIC_INTERFACE
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Create a JWT access token"""
+    """Create a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     to_encode.update({"exp": expire, "iat": datetime.utcnow()})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def verify_token(token: str, db: Session) -> Optional[UserResponse]:
-    """Verify JWT token and return user data"""
+# PUBLIC_INTERFACE
+async def verify_token(token: str, db: AsyncSession) -> Optional[UserResponse]:
+    """
+    Verify a JWT token and return the corresponding user as UserResponse.
+
+    Args:
+        token: The bearer token string.
+        db: Async SQLAlchemy session provided by get_db.
+
+    Returns:
+        UserResponse if token is valid and user exists, otherwise None.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        user_id: Optional[str] = payload.get("sub")
+        if not user_id:
             return None
-        
-        # Get user from database
-        db_service = DatabaseService(db)
-        db_user = db_service.get_user_by_id(user_id)
-        if db_user is None:
+
+        # Fetch user via repository (async)
+        repo = UserRepository(db)
+        db_user = await repo.get_user_by_id(user_id)
+        if not db_user:
             return None
-        
-        # Convert to UserResponse
+
+        # Map minimal fields present in current schema to UserResponse
         user_response = UserResponse(
-            user_id=db_user.user_id,
+            id=str(db_user.id),
             email=db_user.email,
             username=db_user.username,
-            full_name=db_user.full_name,
-            avatar_url=db_user.avatar_url,
-            role=db_user.role,
-            preferences=db_user.preferences or {},
-            is_active=db_user.is_active,
             created_at=db_user.created_at,
-            updated_at=db_user.updated_at
         )
-        
         return user_response
+
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -77,50 +86,68 @@ def verify_token(token: str, db: Session) -> Optional[UserResponse]:
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.JWTError:
+        # Any other JWT error -> treat as invalid
         return None
 
-def get_current_user(
+# PUBLIC_INTERFACE
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
-    Dependency to get current authenticated user
+    FastAPI dependency that returns the current authenticated user.
+
+    Parameters:
+        credentials: Extracted bearer token via HTTPBearer.
+        db: Async DB session.
+
+    Returns:
+        UserResponse for the current user.
+
+    Raises:
+        HTTPException(401): If credentials cannot be validated.
     """
     token = credentials.credentials
-    user = verify_token(token, db)
-    
+    user = await verify_token(token, db)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     return user
 
-def get_current_user_optional(
+# PUBLIC_INTERFACE
+async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> Optional[UserResponse]:
     """
-    Optional authentication dependency
-    Returns UserResponse if authenticated, None otherwise
+    Optional authentication dependency.
+    Returns UserResponse if authenticated, None otherwise.
     """
     if credentials is None:
         return None
-    
-    user = verify_token(credentials.credentials, db)
+    user = await verify_token(credentials.credentials, db)
     return user
 
 # Legacy functions for backward compatibility
+
+# PUBLIC_INTERFACE
 def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """
-    Get current user ID from JWT token (legacy function)
+    Get current user ID from JWT token (legacy helper).
+
+    Returns:
+        str: user_id (sub) from the token.
+
+    Raises:
+        HTTPException(401) on invalid/expired tokens.
     """
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        user_id: Optional[str] = payload.get("sub")
+        if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
@@ -140,15 +167,17 @@ def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(secu
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-def optional_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))) -> Optional[str]:
+# PUBLIC_INTERFACE
+def optional_auth(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+) -> Optional[str]:
     """
-    Optional authentication - returns user_id if authenticated, None otherwise (legacy function)
+    Optional authentication - returns user_id if authenticated, None otherwise (legacy helper).
     """
     if credentials is None:
         return None
-    
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("sub")
-    except:
+    except Exception:
         return None

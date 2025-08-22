@@ -37,8 +37,20 @@ async def get_highlights(
     all_highlights_db = await highlight_repo.get_highlights(limit=1000, offset=0, match_id=match_id)
     total = len(all_highlights_db)
     # Ensures the returned value is a dict, suitable for JSON serialization
+    # Convert highlights to minimal schema
+    highlight_data = []
+    for h in highlights:
+        highlight_dict = {
+            "highlight_id": str(h.highlight_id),
+            "match_id": str(h.match_id),
+            "title": h.title,
+            "video_url": h.video_url,
+            "created_at": h.created_at
+        }
+        highlight_data.append(highlight_dict)
+    
     return {
-        "highlights": [h.dict() if hasattr(h, "dict") else h for h in highlights],
+        "highlights": highlight_data,
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -61,7 +73,6 @@ async def get_highlight_details(
     get_trusted_user(request)
     highlight_repo = HighlightRepository(db_session)
     highlight_db = await highlight_repo.get_highlight_by_id(highlight_id)
->>>>>>> cga-cg908b179b
     if not highlight_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Highlight not found")
     highlight = convert_highlight_db_to_response(highlight_db)

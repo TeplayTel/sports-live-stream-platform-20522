@@ -12,63 +12,104 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 from contextlib import asynccontextmanager
+import re
 
 # PUBLIC_INTERFACE
-# Use only the provided environment variable for DB connection string.
-# This backend strictly requires DATABASE_URL or POSTGRES_URL to be set in the environment.
-# Only the full PostgreSQL connection string is used by this backend:
+# Use environment variables for DB connection string in the following order:
+# 1. DATABASE_URL or POSTGRES_URL for PostgreSQL connections
+# 2. SQLITE_URL for SQLite connections
+# 3. Default SQLite path: sqlite+aiosqlite:///./app.db
 #
-#   - DATABASE_URL (preferred key)
-#   - POSTGRES_URL (alternative key; used if DATABASE_URL is absent)
-#
-# Other env vars (POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, etc.) are NOT parsed and not required for backend startup.
-# The .env file may contain these, but only the full connection string var is used.
+# When using SQLite:
+# - Tables are created automatically on startup
+# - Alembic migrations are skipped
+# - Both sync and async engines are configured with appropriate drivers
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+def get_database_url():
+    """Determine the database URL based on environment variables."""
+    # Check for PostgreSQL URL first
+    pg_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if pg_url:
+        return pg_url, "postgresql"
 
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL or POSTGRES_URL must be set as an environment variable for DB connection.\n"
-        "No database username provided. By default, the system expects the role/user 'appuser'.\n"
-        "If you see errors referring to 'role \"kavia\" does not exist', you have not set your env vars correctly, "
-        "or are using the wrong username in your connection string.\n"
-        "Update your .env to match the correct username and see .env.example for reference.\n"
-        "Hardcoded database connection or localhost with the wrong user is not supported.\n"
-        "Please contact support if you see this error in production."
+    # Check for explicit SQLite URL
+    sqlite_url = os.environ.get("SQLITE_URL")
+    if sqlite_url:
+        return sqlite_url, "sqlite"
+
+    # Default to local SQLite database
+    return "sqlite+aiosqlite:///./app.db", "sqlite"
+
+# Get database configuration
+DATABASE_URL, DB_TYPE = get_database_url()
+
+# Configure database URLs for sync and async operations
+if DB_TYPE == "postgresql":
+    if DATABASE_URL.startswith("postgresql://"):
+        ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif DATABASE_URL.startswith("postgresql+asyncpg://"):
+        ASYNC_DATABASE_URL = DATABASE_URL
+    else:
+        raise ValueError(
+            "Unknown PostgreSQL connection string format. "
+            "Expected postgresql:// or postgresql+asyncpg://"
+        )
+    
+    # For sync operations and Alembic migrations
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    
+elif DB_TYPE == "sqlite":
+    # Convert URL to proper format if needed
+    if not DATABASE_URL.startswith(("sqlite://", "sqlite+aiosqlite://")):
+        raise ValueError("SQLite URL must start with sqlite:// or sqlite+aiosqlite://")
+    
+    # Ensure async URL uses aiosqlite
+    ASYNC_DATABASE_URL = re.sub(r'^sqlite:\/\/', 'sqlite+aiosqlite://', DATABASE_URL)
+    
+    # For sync operations, use regular sqlite
+    SYNC_DATABASE_URL = re.sub(r'^sqlite\+aiosqlite:\/\/', 'sqlite://', ASYNC_DATABASE_URL)
+    engine = create_engine(
+        SYNC_DATABASE_URL,
+        pool_pre_ping=True,
+        connect_args={"check_same_thread": False}
     )
 
-# If the DATABASE_URL is not already async, convert it (SQLAlchemy async format)
-if DATABASE_URL.startswith("postgresql://"):
-    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgresql+asyncpg://"):
-    ASYNC_DATABASE_URL = DATABASE_URL
-else:
-    raise ValueError(
-        "Unknown database connection string format. "
-        "Expected postgresql:// or postgresql+asyncpg://"
-    )
-
-# For sync operations and Alembic migrations
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # For async operations
-async_engine = create_async_engine(ASYNC_DATABASE_URL, pool_pre_ping=True, future=True)
+async_engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    pool_pre_ping=True,
+    future=True
+)
 AsyncSessionLocal = async_sessionmaker(
-    bind=async_engine, expire_on_commit=False, class_=AsyncSession
+    bind=async_engine,
+    expire_on_commit=False,
+    class_=AsyncSession
 )
 
 # PUBLIC_INTERFACE
 @asynccontextmanager
-async def get_db():
+async def get_db() -> AsyncSession:
     """
-    Dependency that provides a SQLAlchemy async database session.
-    Usage: async with get_db() as session:
-    Or: db = await get_db().__anext__()
+    PUBLIC_INTERFACE: FastAPI dependency that provides a SQLAlchemy AsyncSession.
+
+    Usage in FastAPI endpoints:
+      - Inject as a dependency: `db: AsyncSession = Depends(get_db)`
+      - Do NOT call context-manager methods on `db`; it is already a live AsyncSession.
+
+    Notes:
+      - This function is an async context manager used by FastAPI's dependency system.
+        FastAPI will enter/exit this context around the request and yield a real
+        AsyncSession instance to the endpoint function.
     """
-    db = AsyncSessionLocal()
+    db: AsyncSession = AsyncSessionLocal()
     try:
+        # Defensive check to catch incorrect session construction early.
+        if not isinstance(db, AsyncSession):
+            # In case configuration changes break the session factory
+            raise RuntimeError("get_db did not create an AsyncSession instance.")
         yield db
     finally:
         await db.close()
@@ -76,21 +117,25 @@ async def get_db():
 # PUBLIC_INTERFACE
 async def init_database():
     """
-    (Stub) Initialize database resources. For production, ensure all tables exist.
+    Initialize database resources. For SQLite, creates all tables.
+    For PostgreSQL, this is handled by Alembic migrations.
     """
-    pass
+    if DB_TYPE == "sqlite":
+        # Create all tables for SQLite
+        # Use sync engine for table creation as it's a one-time operation
+        Base.metadata.create_all(engine)
 
 # PUBLIC_INTERFACE
 async def close_database_connections():
     """
-    (Stub) Properly close async DB connections, if needed.
+    Properly close async DB connections.
     """
     await async_engine.dispose()
 
 # PUBLIC_INTERFACE
 async def check_database_connection():
     """
-    (Stub) Check if the DB connection is available.
+    Check if the DB connection is available.
     :return: True if connection OK, raises exception otherwise
     """
     async with async_engine.connect() as conn:
@@ -100,36 +145,39 @@ async def check_database_connection():
 # PUBLIC_INTERFACE
 async def get_database_health():
     """
-    (Stub) Return DB connection healthcheck info. Customize as required.
+    Return DB connection healthcheck info.
     """
     try:
         ok = await check_database_connection()
-        return {"status": "ok" if ok else "error"}
+        return {
+            "status": "ok" if ok else "error",
+            "type": DB_TYPE,
+            "url": DATABASE_URL.split("@")[-1]  # Safe portion of URL for logging
+        }
     except Exception as e:
-        return {"status": "error", "detail": str(e)}
-
+        return {"status": "error", "detail": str(e), "type": DB_TYPE}
 
 # =============================================================================
 # File summary and future notes
 # =============================================================================
 # Purpose:
-#   This file establishes and manages the database connection settings,
-#   including engine creation and database session management for the
-#   sports telecast backend. It is a foundational part of the API's interaction
-#   with PostgreSQL, supporting CRUD operations for user, event, match, and
-#   profile data.
+#   This file establishes and manages database connections for both PostgreSQL
+#   and SQLite backends. It provides unified session management while handling
+#   the specific requirements of each database type (migrations vs auto-creation,
+#   sync/async drivers, etc.).
 #
 # Usage notes:
 #   - Import the get_db dependency in FastAPI routes for database access:
 #       from src.database.connection import get_db
 #   - Handles session management (open/close).
-#   - Relies on environment variables in .env for PostgreSQL connectivity.
-#   - Ensure appropriate models are imported before running migrations.
+#   - For PostgreSQL: Uses environment variables in .env
+#   - For SQLite: Uses SQLITE_URL env var or defaults to ./app.db
+#   - SQLite mode creates tables automatically; PostgreSQL uses Alembic
 #
 # Reminders & future improvements:
-#   - Consider adding connection pooling configuration for high-traffic scenarios.
-#   - Add automated reconnection logic for robustness in case of dropped connections.
-#   - Evaluate async session management if application requires high concurrency.
-#   - Document any custom session configurations here when modified.
+#   - Consider adding connection pooling configuration for PostgreSQL
+#   - Add automated reconnection logic for robustness
+#   - Document any custom session configurations here when modified
+#   - Consider adding migration support for SQLite if needed
 #
 # Last updated: 2024-06 (Kavia code generation agent)

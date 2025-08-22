@@ -91,14 +91,25 @@ AsyncSessionLocal = async_sessionmaker(
 
 # PUBLIC_INTERFACE
 @asynccontextmanager
-async def get_db():
+async def get_db() -> AsyncSession:
     """
-    Dependency that provides a SQLAlchemy async database session.
-    Usage: async with get_db() as session:
-    Or: db = await get_db().__anext__()
+    PUBLIC_INTERFACE: FastAPI dependency that provides a SQLAlchemy AsyncSession.
+
+    Usage in FastAPI endpoints:
+      - Inject as a dependency: `db: AsyncSession = Depends(get_db)`
+      - Do NOT call context-manager methods on `db`; it is already a live AsyncSession.
+
+    Notes:
+      - This function is an async context manager used by FastAPI's dependency system.
+        FastAPI will enter/exit this context around the request and yield a real
+        AsyncSession instance to the endpoint function.
     """
-    db = AsyncSessionLocal()
+    db: AsyncSession = AsyncSessionLocal()
     try:
+        # Defensive check to catch incorrect session construction early.
+        if not isinstance(db, AsyncSession):
+            # In case configuration changes break the session factory
+            raise RuntimeError("get_db did not create an AsyncSession instance.")
         yield db
     finally:
         await db.close()

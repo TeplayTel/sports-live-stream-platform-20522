@@ -22,9 +22,15 @@ from ..models.match import MatchStatus
 
 class BaseRepository:
     """Base repository with common database operations"""
-    
+
     def __init__(self, session: AsyncSession):
-        self.session = session
+        # Ensure we are handed a real AsyncSession (not a context manager/generator)
+        if not isinstance(session, AsyncSession):
+            raise TypeError(
+                "BaseRepository expected an AsyncSession instance. "
+                "Use FastAPI dependency injection: db: AsyncSession = Depends(get_db)."
+            )
+        self.session: AsyncSession = session
 
 class UserRepository(BaseRepository):
     """Repository for user operations"""

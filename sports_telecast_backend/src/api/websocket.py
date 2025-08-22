@@ -64,9 +64,12 @@ async def websocket_endpoint(
                 "data": {
                     "match": {
                         "match_id": event.match_id,
-                        "status": event.status.value if hasattr(event.status, "value") else str(event.status),
-                        "home_score": event.home_score,
-                        "away_score": event.away_score,
+                        "event_id": event.event_id,
+                        "home_team_id": event.home_team_id,
+                        "away_team_id": event.away_team_id,
+                        "status": str(event.status),
+                        "start_time": event.start_time,
+                        "stream_url": event.stream_url
                     },
                     "reaction_summary": reaction_summary,
                 },

@@ -47,14 +47,7 @@ async def create_user_profile(
         profile_id=str(uuid.uuid4()),
         user_id=pdict["user_id"],
         display_name=pdict.get("display_name"),
-        bio=pdict.get("bio"),
-        location=pdict.get("location"),
-        website=str(pdict["website"]) if pdict.get("website") else None,
-        favorite_teams=pdict.get("favorite_teams"),
-        favorite_sports=pdict.get("favorite_sports"),
-        profile_visibility=ProfileVisibilityEnum.PUBLIC,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        avatar_url=pdict.get("avatar_url")
     )
     db.add(profile)
     await db.commit()
@@ -224,31 +217,9 @@ async def delete_my_profile(
 
 def _convert_profile_to_response(profile: UserProfileDB, is_own_profile: bool = False) -> UserProfileResponse:
     """Convert UserProfileDB to UserProfileResponse"""
-    notification_prefs = []
-    if profile.notification_preferences:
-        from ..models.profile import NotificationPreference
-        for pref_dict in profile.notification_preferences:
-            notification_prefs.append(NotificationPreference(**pref_dict))
     return UserProfileResponse(
         profile_id=str(profile.profile_id),
         user_id=str(profile.user_id),
         display_name=profile.display_name,
-        bio=profile.bio,
-        location=profile.location,
-        website=profile.website,
-        avatar_url=profile.avatar_url,
-        cover_image_url=profile.cover_image_url,
-        favorite_teams=profile.favorite_teams or [],
-        favorite_sports=profile.favorite_sports or [],
-        favorite_players=profile.favorite_players or [],
-        favorite_leagues=profile.favorite_leagues or [],
-        profile_visibility=profile.profile_visibility,
-        total_reactions=profile.total_reactions,
-        matches_watched=profile.matches_watched,
-        highlights_watched=profile.highlights_watched,
-        is_verified=profile.is_verified,
-        preferred_language=profile.preferred_language,
-        timezone=profile.timezone,
-        created_at=profile.created_at,
-        updated_at=profile.updated_at
+        avatar_url=profile.avatar_url
     )

@@ -28,7 +28,13 @@ async def login_user(
     user = await repo.get_user_by_email(login_data.email)
     if not user or not pwd_context.verify(login_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    user_response = convert_user_db_to_response(user)
+    # Only include fields from minimal schema
+    user_response = {
+        "id": str(user.id),
+        "email": user.email,
+        "username": user.username,
+        "created_at": user.created_at
+    }
     return TokenData(
         access_token="mock_token",
         token_type="bearer",

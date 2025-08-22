@@ -69,13 +69,11 @@ async def create_emoji_reaction(
     emoji_update_data = {
         "event_id": reaction_request.event_id,
         "emoji_id": reaction_request.emoji_id,
-        "emoji_type": emoji_db.emoji_type.value,
-        "new_count": summary.get("emoji_counts", {}).get(reaction_request.emoji_id, 1),
+        "emoji_type": emoji_db.emoji_type,
+        "image_url": emoji_db.image_url,
+        "name": emoji_db.name,
         "user_id": user_id,
-        "reaction_summary": {
-            "total_reactions": summary.get("total_reactions", 0),
-            "top_emojis": summary.get("top_emojis", [])
-        }
+        "total_reactions": summary.get("total_reactions", 0)
     }
     asyncio.create_task(manager.broadcast_emoji_reaction(
         reaction_request.event_id, emoji_update_data

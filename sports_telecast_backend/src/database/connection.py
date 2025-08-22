@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
 )
-from contextlib import asynccontextmanager
+# Removed unused asynccontextmanager import to satisfy linter
 import re
 import logging
 
@@ -94,7 +94,6 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # PUBLIC_INTERFACE
-@asynccontextmanager
 async def get_db() -> AsyncSession:
     """
     PUBLIC_INTERFACE: FastAPI dependency that provides a SQLAlchemy AsyncSession.

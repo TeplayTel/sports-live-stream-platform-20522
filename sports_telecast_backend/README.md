@@ -37,6 +37,7 @@ A comprehensive FastAPI backend for a sports live streaming platform that provid
    ```bash
    pip install -r requirements.txt
    ```
+   If you encounter `ModuleNotFoundError: No module named 'aiosqlite'`, ensure your virtual environment is active and re-run the install command above. The dependency is now included in requirements.txt.
 
 4. **Set up environment variables**:
    ```bash

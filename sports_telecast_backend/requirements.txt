@@ -13,3 +13,4 @@ PyYAML==6.0.2
 watchfiles==1.0.5
 websockets==15.0.1
 psycopg2-binary>=2.9.0
+PyJWT

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import Optional, List
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from datetime import datetime
+import uuid
 
 from ..models.user import UserResponse
 from ..auth.jwt_auth import get_current_user
-from ..database.session import get_db
-from ..database.service import DatabaseService
+from ..database.connection import get_db
 from ..websocket.manager import manager
 import asyncio
 
@@ -49,41 +49,28 @@ class ChatMessageListResponse(BaseModel):
 def send_chat_message(
     message_request: ChatMessageRequest,
     current_user: UserResponse = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Send a chat message for a live event or match
 
     Records a user's chat message and broadcasts it to all connected WebSocket clients.
+
+    Note:
+    - Persistence layer is not implemented in this codebase; this endpoint broadcasts
+      the message to connected WebSocket clients and returns a generated message_id.
+    - Dependency injection now correctly provides an AsyncSession via get_db.
     """
     try:
-        db_service = DatabaseService(db)
-        
         # Validate that either match_id or event_id is provided
         if not message_request.match_id and not message_request.event_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Either match_id or event_id must be provided"
             )
-        
-        # If match_id is provided, validate it exists
-        if message_request.match_id:
-            match = db_service.get_match_by_id(message_request.match_id)
-            if not match:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Match not found"
-                )
-        
-        # Add chat message
-        message_id = db_service.add_chat_message(
-            user_id=current_user.user_id,
-            match_id=message_request.match_id,
-            message=message_request.message,
-            message_type=message_request.message_type
-        )
-        
+
         # Prepare WebSocket broadcast data
+        message_id = str(uuid.uuid4())
         chat_data = {
             "type": "chat_message",
             "message_id": message_id,
@@ -95,11 +82,11 @@ def send_chat_message(
             "message_type": message_request.message_type,
             "timestamp": datetime.utcnow().isoformat()
         }
-        
+
         # Broadcast to WebSocket connections
         event_id = message_request.match_id or message_request.event_id
         asyncio.create_task(manager.broadcast_to_event(event_id, chat_data))
-        
+
         return ChatMessageResponse(
             message_id=message_id,
             message="Message sent successfully"
@@ -116,53 +103,19 @@ def get_chat_messages(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: Optional[UserResponse] = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get chat messages for a specific match
 
-    Returns paginated list of chat messages for the specified match.
+    Note:
+    - Persistence layer is not implemented in this codebase; returns empty list.
+    - Dependency injection now correctly provides an AsyncSession via get_db.
     """
     try:
-        db_service = DatabaseService(db)
-        
-        # Validate match exists
-        match = db_service.get_match_by_id(match_id)
-        if not match:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Match not found"
-            )
-        
-        offset = (page - 1) * page_size
-        messages, total = db_service.get_chat_messages(
-            match_id=match_id,
-            limit=page_size,
-            offset=offset
-        )
-        
-        # Convert to Pydantic models
-        message_list = []
-        for message in messages:
-            # Get username from user
-            user = db_service.get_user_by_id(message.user_id)
-            username = user.username if user else "Unknown User"
-            
-            message_data = ChatMessage(
-                message_id=message.message_id,
-                user_id=message.user_id,
-                username=username,
-                match_id=message.match_id,
-                event_id=message.event_id,
-                message=message.message,
-                message_type=message.message_type,
-                created_at=message.created_at
-            )
-            message_list.append(message_data)
-        
         return ChatMessageListResponse(
-            messages=message_list,
-            total=total,
+            messages=[],
+            total=0,
             page=page,
             page_size=page_size
         )

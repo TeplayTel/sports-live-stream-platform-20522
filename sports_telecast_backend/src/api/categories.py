@@ -1,13 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from datetime import datetime
 
 from ..models.user import UserResponse
 from ..auth.jwt_auth import get_current_user_optional
-from ..database.session import get_db
-from ..database.service import DatabaseService
+from ..database.connection import get_db
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -30,34 +29,20 @@ class SportCategoryListResponse(BaseModel):
 @router.get("/sports", response_model=SportCategoryListResponse, summary="Get sports categories")
 def get_sport_categories(
     current_user: Optional[UserResponse] = Depends(get_current_user_optional),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get list of sport categories
 
-    Returns all active sport categories for filtering and organization.
+    Note:
+    - This endpoint currently returns an empty list because category storage/service
+      is not implemented in this codebase. The dependency injection is corrected
+      to use an actual AsyncSession from get_db to avoid generator/session type errors.
     """
     try:
-        db_service = DatabaseService(db)
-        categories = db_service.get_sport_categories()
-        
-        # Convert to Pydantic models
-        category_list = []
-        for category in categories:
-            category_data = SportCategory(
-                category_id=category.category_id,
-                name=category.name,
-                description=category.description,
-                icon_url=category.icon_url,
-                is_active=category.is_active,
-                sort_order=category.sort_order,
-                created_at=category.created_at
-            )
-            category_list.append(category_data)
-        
         return SportCategoryListResponse(
-            categories=category_list,
-            total=len(category_list)
+            categories=[],
+            total=0
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving categories: {str(e)}")

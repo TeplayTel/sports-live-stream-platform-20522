@@ -103,6 +103,8 @@ async def get_db() -> AsyncSession:
       - This function is an async context manager used by FastAPI's dependency system.
         FastAPI will enter/exit this context around the request and yield a real
         AsyncSession instance to the endpoint function.
+      - Common pitfall: Do not pass `get_db()` itself or treat it as a generator.
+        Always rely on FastAPI to inject the yielded AsyncSession.
     """
     db: AsyncSession = AsyncSessionLocal()
     try:

@@ -73,17 +73,39 @@ class ScheduleResponse(BaseResponse):
 
 # Conversion functions
 def convert_user_db_to_response(user_db: UserDB) -> Dict[str, Any]:
-    """Convert UserDB to response dict"""
-    # Map fields from the SQLAlchemy UserDB model to API response keys.
-    # The UserDB model defines the primary key as `id`, not `user_id`.
-    # Ensure response uses expected keys. Here we maintain "user_id" in response only
-    # if the API expects that; otherwise, use "id". Based on UserResponse in src/models/response.py,
-    # the API expects "id", "email", "username", "created_at".
+    """Convert UserDB SQLAlchemy instance to a dict matching models.user.UserResponse
+
+    Ensures presence and correct naming of:
+    - user_id (maps from UserDB.id)
+    - email
+    - username
+    - full_name (not stored -> default None)
+    - avatar_url (not stored -> default None)
+    - role (not stored -> default to "user")
+    - preferences (not stored -> provide default structure)
+    - is_active (not stored -> default True)
+    - created_at (from DB)
+    - updated_at (DB may not have -> fallback to created_at)
+    """
+    from ..models.user import UserRole, UserPreferences  # import for defaults/types
+
+    # Build defaults for fields not present in DB schema
+    default_prefs = UserPreferences().dict()
+    # created_at exists in UserDB, updated_at does not in current schema -> use created_at
+    created_at = getattr(user_db, "created_at", None)
+    updated_at = getattr(user_db, "updated_at", None) or created_at
+
     return {
-        "id": str(user_db.id),
+        "user_id": str(user_db.id),
         "email": user_db.email,
         "username": user_db.username,
-        "created_at": user_db.created_at,
+        "full_name": None,
+        "avatar_url": None,
+        "role": UserRole.USER,  # default role
+        "preferences": default_prefs,
+        "is_active": True,
+        "created_at": created_at,
+        "updated_at": updated_at,
     }
 
 def convert_team_db_to_response(team_db: TeamDB) -> TeamResponse:

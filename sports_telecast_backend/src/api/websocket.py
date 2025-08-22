@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..websocket.manager import manager
 from ..auth.jwt_auth import verify_token
 from ..database import get_db
-from ..database.repositories import MatchRepository, EmojiRepository
+from ..database.repositories import MatchRepository
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,7 @@ async def websocket_endpoint(
         # Accept connection and add to manager
         await manager.connect(websocket, event_id, user_id)
 
-        # Send initial data
-        emoji_repo = EmojiRepository(db)
-        reaction_summary = await emoji_repo.get_reaction_summary(event_id)
+        # Send initial data (without emoji reaction summary due to minimal schema)
         await manager.send_personal_message(
             {
                 "type": "initial_data",
@@ -70,9 +68,8 @@ async def websocket_endpoint(
                         "away_team_id": event.away_team_id,
                         "status": str(event.status),
                         "start_time": event.start_time,
-                        "stream_url": event.stream_url
-                    },
-                    "reaction_summary": reaction_summary,
+                        "stream_url": event.stream_url,
+                    }
                 },
             },
             websocket,
@@ -89,12 +86,7 @@ async def websocket_endpoint(
 
                 if message.get("type") == "ping":
                     await manager.send_personal_message({"type": "pong", "timestamp": message.get("timestamp")}, websocket)
-                elif message.get("type") == "get_reaction_summary":
-                    summary = await emoji_repo.get_reaction_summary(event_id)
-                    await manager.send_personal_message(
-                        {"type": "reaction_summary", "event_id": event_id, "data": summary},
-                        websocket,
-                    )
+
             except WebSocketDisconnect:
                 break
             except json.JSONDecodeError:

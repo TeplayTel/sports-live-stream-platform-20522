@@ -4,7 +4,6 @@ Database initialization script
 Run this to set up the database tables and seed initial data
 """
 
-import os
 import sys
 from pathlib import Path
 

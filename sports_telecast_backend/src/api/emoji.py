@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Query, Request, Body
 from ..models.emoji import (
     EmojiListResponse, EmojiReactionRequest, EmojiReactionResponse,
-    EmojiReactionSummary, EmojiAsset
+    EmojiReactionSummary
 )
 from ..database.repositories import EmojiRepository, MatchRepository, EventRepository
 from ..database.schemas import convert_emoji_db_to_pydantic

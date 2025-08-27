@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from .auth import router as auth_router
 from .profiles import router as profiles_router
 from .emoji import router as emoji_router
+from .emoji_public import router as emoji_public_router
 from api.emoji_upload import router as emoji_upload_router
 from .highlights import router as highlights_router
 from .websocket import router as websocket_router
@@ -158,6 +159,7 @@ async def database_health_check():
 app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(emoji_router)
+app.include_router(emoji_public_router)
 app.include_router(emoji_upload_router)
 app.include_router(highlights_router)
 app.include_router(websocket_router)
@@ -170,6 +172,7 @@ tags_metadata = [
     {"name": "Fan Engagement - Emojis", "description": "Interactive emoji reactions for live cricket events"},
     {"name": "Highlights", "description": "Match highlights, cricket video content, and key moments"},
     {"name": "WebSocket", "description": "Real-time WebSocket connections for cricket live updates and emoji reactions"},
+    {"name": "Emoji", "description": "Public emoji APIs for listing and reacting without auth"},
 ]
 app.openapi_tags = tags_metadata
 

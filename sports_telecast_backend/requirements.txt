@@ -16,3 +16,4 @@ psycopg2-binary>=2.9.0
 aiosqlite==0.20.0
 PyJWT
 pydantic[email]
+flake8==7.1.1
